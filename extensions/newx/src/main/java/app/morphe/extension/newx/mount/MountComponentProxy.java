@@ -43,8 +43,10 @@ public final class MountComponentProxy {
     private static final String EXTENSION_PREFIX = "app.morphe.extension.";
     private static final String IDENTIFIER_PREFIX = "piko-mount-proxy:";
 
-    private static final int KIND_ACTIVITY = 1;
-    private static final int KIND_RECEIVER = 2;
+    /** {@link #resolveClassName} kind for {@code AppComponentFactory.instantiateActivity}. */
+    public static final int KIND_ACTIVITY = 1;
+    /** {@link #resolveClassName} kind for {@code AppComponentFactory.instantiateReceiver}. */
+    public static final int KIND_RECEIVER = 2;
 
     /** Activity flags that change task, history or lifecycle behaviour of the hosted screen. */
     private static final int UNSAFE_ACTIVITY_FLAGS =
@@ -104,10 +106,11 @@ public final class MountComponentProxy {
 
     /**
      * Injection point: start of the app's {@code AppComponentFactory.instantiateActivity} and
-     * {@code instantiateReceiver}. Returns the extension class to instantiate in place of the proxy,
-     * or the original class name for every other component.
+     * {@code instantiateReceiver}, with {@code kind} {@link #KIND_ACTIVITY} or {@link #KIND_RECEIVER}.
+     * Returns the extension class to instantiate in place of the selected proxy, or the original
+     * class name for every other component. Never throws.
      */
-    public static String resolveClassName(String className, @Nullable Intent intent) {
+    public static String resolveClassName(String className, @Nullable Intent intent, int kind) {
         if (intent == null || className == null) return className;
         try {
             String identifier = intent.getIdentifier();

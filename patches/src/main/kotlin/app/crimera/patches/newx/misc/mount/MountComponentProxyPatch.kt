@@ -11,6 +11,7 @@ import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.patch.resourcePatch
 import app.morphe.patcher.util.getReference
 import app.morphe.patcher.util.p0Register
+import app.morphe.patcher.util.proxy.mutableTypes.MutableClass
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
@@ -40,15 +41,50 @@ private val routeMethod =
     methodReference("$MOUNT_PROXY_DESCRIPTOR->route(${INTENT_DESCRIPTOR}Landroid/content/Context;)V")
 private val resolveClassNameMethod =
     methodReference(
-        "$MOUNT_PROXY_DESCRIPTOR->resolveClassName($STRING_DESCRIPTOR$INTENT_DESCRIPTOR)$STRING_DESCRIPTOR",
+        "$MOUNT_PROXY_DESCRIPTOR->resolveClassName($STRING_DESCRIPTOR${INTENT_DESCRIPTOR}I)$STRING_DESCRIPTOR",
     )
 
-/** `AppComponentFactory` callbacks whose class name the hook rewrites: (name, return type). */
-private val factoryCallbacks =
+/** The framework base class every `android:appComponentFactory` must extend. */
+internal const val FRAMEWORK_FACTORY_DESCRIPTOR = "Landroid/app/AppComponentFactory;"
+
+/** An `AppComponentFactory` callback the hook rewrites, with the matching `MountComponentProxy.KIND_*`. */
+internal data class FactoryCallback(
+    val name: String,
+    val returnType: String,
+    val kind: Int,
+) {
+    /** `(ClassLoader, String className, Intent)`: p1, p2, p3 of the instance method. */
+    val parameters = listOf(CLASS_LOADER_DESCRIPTOR, STRING_DESCRIPTOR, INTENT_DESCRIPTOR)
+}
+
+/** Must stay equal to `MountComponentProxy.KIND_ACTIVITY` / `KIND_RECEIVER`. */
+internal val factoryCallbacks =
     listOf(
-        "instantiateActivity" to "Landroid/app/Activity;",
-        "instantiateReceiver" to "Landroid/content/BroadcastReceiver;",
+        FactoryCallback("instantiateActivity", "Landroid/app/Activity;", kind = 1),
+        FactoryCallback("instantiateReceiver", "Landroid/content/BroadcastReceiver;", kind = 2),
     )
+
+/**
+ * Contract (Phase 2): inserts at index 0 of an existing callback implementation
+ * `className = MountComponentProxy.resolveClassName(className, intent, kind)`, where className is
+ * p2 and intent is p3 of the instance method, and kind is a scratch `const`.
+ */
+internal fun MutableMethod.insertResolveClassNameHook(callback: FactoryCallback) {
+    throw PatchException("Phase 3 (T1): insertResolveClassNameHook is not implemented for ${callback.name}")
+}
+
+/**
+ * Contract (Phase 2): adds `public <callback>(ClassLoader, String, Intent)<Ret>` to [this] factory
+ * class, which declares no such method. Body: the resolve hook, then
+ * `invoke-super {p0, p1, p2, p3}, <superclass>-><callback>(...)`, `move-result-object`, `return-object`.
+ * [superclass] is this class's direct superclass. Returns the added method.
+ */
+internal fun MutableClass.addFactoryCallbackOverride(
+    callback: FactoryCallback,
+    superclass: String,
+): MutableMethod {
+    throw PatchException("Phase 3 (T1): addFactoryCallbackOverride is not implemented for ${callback.name} on $type/$superclass")
+}
 
 private val logger = Logger.getLogger("NewXMountComponentProxy")
 
@@ -101,8 +137,10 @@ private fun hookAppComponentFactory() {
         return
     }
 
-    factoryCallbacks.forEach { (name, returnType) ->
-        val parameters = listOf(CLASS_LOADER_DESCRIPTOR, STRING_DESCRIPTOR, INTENT_DESCRIPTOR)
+    factoryCallbacks.forEach { callback ->
+        val name = callback.name
+        val parameters = callback.parameters
+        val returnType = callback.returnType
         val method = context.findFactoryCallback(factory, name, parameters, returnType)
         if (method == null) {
             logger.warning(

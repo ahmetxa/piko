@@ -2,6 +2,8 @@ package app.crimera.patches.newx.misc.mount
 
 import app.crimera.bytecode.insertHook
 import app.crimera.bytecode.methodReference
+import app.crimera.patches.common.requireAtMostOne
+import app.crimera.patches.common.requireExactlyOne
 import app.crimera.patches.newx.misc.extension.newXExtensionPatch
 import app.crimera.patches.newx.utils.Constants.EXTENSION_PACKAGE
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
@@ -13,12 +15,17 @@ import app.morphe.patcher.util.getReference
 import app.morphe.patcher.util.p0Register
 import app.morphe.patcher.util.proxy.mutableTypes.MutableClass
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
+import app.morphe.patcher.util.smali.toInstruction
+import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
+import com.android.tools.smali.dexlib2.builder.MethodImplementationBuilder
 import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.RegisterRangeInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
+import com.android.tools.smali.dexlib2.immutable.ImmutableMethod
+import com.android.tools.smali.dexlib2.immutable.ImmutableMethodParameter
+import com.android.tools.smali.dexlib2.immutable.reference.ImmutableMethodReference
 import org.w3c.dom.Element
-import java.util.logging.Logger
 
 /*
  * Root mount support for extension-owned components.
@@ -70,7 +77,20 @@ internal val factoryCallbacks =
  * p2 and intent is p3 of the instance method, and kind is a scratch `const`.
  */
 internal fun MutableMethod.insertResolveClassNameHook(callback: FactoryCallback) {
-    throw PatchException("Phase 3 (T1): insertResolveClassNameHook is not implemented for ${callback.name}")
+    val classNameRegister = p0Register + 2
+    val intentRegister = p0Register + 3
+    insertHook(
+        index = 0,
+        // A branch back to the entry would only repeat the idempotent class name rewrite.
+        // p2/p3 are read by the hook; the kind constant must not land on them.
+        excludedRegisters = listOf(classNameRegister, intentRegister),
+        relocateBranchTargets = false,
+    ) {
+        val kindRegister = scratchRegister()
+        constInt(kindRegister, callback.kind)
+        invokeStatic(resolveClassNameMethod, classNameRegister, intentRegister, kindRegister)
+        moveResult(classNameRegister, STRING_DESCRIPTOR)
+    }
 }
 
 /**
@@ -83,10 +103,60 @@ internal fun MutableClass.addFactoryCallbackOverride(
     callback: FactoryCallback,
     superclass: String,
 ): MutableMethod {
-    throw PatchException("Phase 3 (T1): addFactoryCallbackOverride is not implemented for ${callback.name} on $type/$superclass")
-}
+    if (methods.any { method -> method.matches(callback.name, callback.parameters, callback.returnType) }) {
+        throw PatchException("$type already declares ${callback.name}; it cannot be added again")
+    }
 
-private val logger = Logger.getLogger("NewXMountComponentProxy")
+    // One local (v0) for the kind constant, then p0..p3 = this, ClassLoader, String, Intent.
+    // The four argument registers are the whole invoke-super operand list.
+    val placeholder =
+        MethodImplementationBuilder(5).apply {
+            addInstruction("return-void".toInstruction())
+        }.methodImplementation
+    val method =
+        MutableMethod(
+            ImmutableMethod(
+                type,
+                callback.name,
+                callback.parameters.map { parameter -> ImmutableMethodParameter(parameter, emptySet(), null) },
+                callback.returnType,
+                AccessFlags.PUBLIC.value,
+                emptySet(),
+                emptySet(),
+                placeholder,
+            ),
+        )
+    methods.add(method)
+    val implementation =
+        method.implementation
+            ?: throw PatchException("Mount proxy override ${callback.name} has no implementation")
+
+    val p0 = method.p0Register
+    val superMethod =
+        ImmutableMethodReference(superclass, callback.name, callback.parameters, callback.returnType)
+    method.insertHook(
+        index = 0,
+        // The placeholder return-void carries no labels, so there are no branch targets to relocate.
+        // The whole frame is live: p0..p3 are read, so only the single local v0 may hold the kind.
+        excludedRegisters = listOf(p0, p0 + 1, p0 + 2, p0 + 3),
+        relocateBranchTargets = false,
+    ) {
+        val kindRegister = scratchRegister()
+        constInt(kindRegister, callback.kind)
+        invokeStatic(resolveClassNameMethod, p0 + 2, p0 + 3, kindRegister)
+        moveResult(p0 + 2, STRING_DESCRIPTOR)
+        invokeSuper(superMethod, p0, p0 + 1, p0 + 2, p0 + 3)
+        moveResult(kindRegister, callback.returnType)
+        returnObject(kindRegister)
+    }
+    // The hook ends with return-object, so the placeholder is now the unreachable last instruction.
+    val lastIndex = implementation.instructions.lastIndex
+    if (implementation.instructions.last().opcode != Opcode.RETURN_VOID) {
+        throw PatchException("Mount proxy override ${callback.name} lost its placeholder return-void")
+    }
+    implementation.removeInstruction(lastIndex)
+    return method
+}
 
 /** The manifest's `android:appComponentFactory`, as a type descriptor, or null when it has none. */
 private var appComponentFactoryDescriptor: String? = null
@@ -130,62 +200,71 @@ internal val newXMountComponentProxyPatch =
  */
 context(context: BytecodePatchContext)
 private fun hookAppComponentFactory() {
-    val factory = appComponentFactoryDescriptor
-    if (factory == null) {
-        // Standard installs register the extension components and never need the proxy.
-        logger.warning("The app declares no AppComponentFactory; extension screens will not open on a root mount")
-        return
-    }
-
-    factoryCallbacks.forEach { callback ->
-        val name = callback.name
-        val parameters = callback.parameters
-        val returnType = callback.returnType
-        val method = context.findFactoryCallback(factory, name, parameters, returnType)
-        if (method == null) {
-            logger.warning(
-                "$factory does not implement $name in the app; extension components of that kind " +
-                    "will not run on a root mount",
+    val factory =
+        appComponentFactoryDescriptor
+            ?: throw PatchException(
+                "The app declares no android:appComponentFactory, so extension activities and receivers " +
+                    "cannot run on a root mount",
             )
-            return@forEach
-        }
-
-        val classNameRegister = method.p0Register + 2
-        val intentRegister = method.p0Register + 3
-        method.insertHook(
-            index = 0,
-            // A branch back to the entry would only repeat the idempotent rewrite.
-            relocateBranchTargets = false,
-        ) {
-            invokeStatic(resolveClassNameMethod, classNameRegister, intentRegister)
-            moveResult(classNameRegister, STRING_DESCRIPTOR)
-        }
+    if (context.classDefByOrNull(factory) == null) {
+        throw PatchException("The app's AppComponentFactory $factory is not in the app dex")
     }
+
+    factoryCallbacks.forEach { callback -> hookFactoryCallback(factory, callback) }
 }
 
-/** The most derived implementation of a factory callback that lives in the app's dex. */
-private fun BytecodePatchContext.findFactoryCallback(
+/**
+ * Hooks the most derived implementation of [callback] in the factory's dex chain, or adds an
+ * override to the factory itself when the chain reaches the framework factory without one.
+ */
+context(context: BytecodePatchContext)
+private fun hookFactoryCallback(
     factory: String,
-    name: String,
-    parameters: List<String>,
-    returnType: String,
-): MutableMethod? {
-    var type: String? = factory
-    val visited = mutableSetOf<String>()
-    while (type != null && visited.add(type)) {
-        val classDef = classDefByOrNull(type) ?: return null
-        val declares =
-            classDef.methods.any { method ->
-                method.matches(name, parameters, returnType) && method.implementation != null
+    callback: FactoryCallback,
+) {
+    val chain = mutableListOf<String>()
+    var type = factory
+    while (type != FRAMEWORK_FACTORY_DESCRIPTOR) {
+        if (type in chain) {
+            throw PatchException("AppComponentFactory superclass chain is cyclic: ${chain + type}")
+        }
+        chain += type
+        val classDef =
+            context.classDefByOrNull(type)
+                ?: throw PatchException(
+                    "AppComponentFactory superclass chain leaves the app dex before reaching " +
+                        "$FRAMEWORK_FACTORY_DESCRIPTOR: ${chain.joinToString(" -> ")}",
+                )
+        val declared =
+            requireAtMostOne(
+                label = "AppComponentFactory ${callback.name} declaration in $type",
+                candidates =
+                    classDef.methods.filter { method ->
+                        method.matches(callback.name, callback.parameters, callback.returnType)
+                    },
+            )
+        if (declared != null) {
+            if (declared.implementation == null || AccessFlags.ABSTRACT.isSet(declared.accessFlags)) {
+                throw PatchException("$type declares ${callback.name} without an implementation")
             }
-        if (declares) {
-            return mutableClassDefBy(type).methods.single { method ->
-                method.matches(name, parameters, returnType)
-            }
+            requireExactlyOne(
+                label = "AppComponentFactory ${callback.name} mutable declaration in $type",
+                candidates =
+                    context.mutableClassDefBy(type).methods.filter { method ->
+                        method.matches(callback.name, callback.parameters, callback.returnType)
+                    },
+            ).insertResolveClassNameHook(callback)
+            return
         }
         type = classDef.superclass
+            ?: throw PatchException("AppComponentFactory chain ends without a superclass: ${chain.joinToString(" -> ")}")
     }
-    return null
+
+    val factoryClass = context.mutableClassDefBy(factory)
+    val directSuperclass =
+        factoryClass.superclass
+            ?: throw PatchException("$factory has no superclass")
+    factoryClass.addFactoryCallbackOverride(callback, directSuperclass)
 }
 
 private fun com.android.tools.smali.dexlib2.iface.Method.matches(

@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
+import app.morphe.extension.shared.Utils;
 import app.morphe.extension.newx.settings.NewXLogger;
 
 /**
@@ -34,6 +35,11 @@ import app.morphe.extension.newx.settings.NewXLogger;
  * the app's {@code AppComponentFactory} so the process instantiates the real extension class in
  * place of the proxy. The identifier is used because it is carried with the intent but never takes
  * part in resolution, and reading it does not unparcel the extras of unrelated app intents.
+ *
+ * <p>The factory swaps only when the requested class is the proxy this class selected for that
+ * component kind and the target is an extension class of the same kind. The identifier is
+ * attacker-controllable: another app can send a crafted identifier to any exported X component, and
+ * without the proxy and kind guard that would instantiate an unexported extension class.
  *
  * <p>On a standard install the extension components are registered, so {@link #route} leaves every
  * intent untouched and nothing changes.
@@ -113,14 +119,22 @@ public final class MountComponentProxy {
     public static String resolveClassName(String className, @Nullable Intent intent, int kind) {
         if (intent == null || className == null) return className;
         try {
+            // Cheapest checks first: almost every intent has no identifier and must return here.
             String identifier = intent.getIdentifier();
             if (identifier == null || !identifier.startsWith(IDENTIFIER_PREFIX)) return className;
             ComponentName component = intent.getComponent();
             // Only swap the component the intent was addressed to, never a different one.
             if (component != null && !className.equals(component.getClassName())) return className;
+            if (kind != KIND_ACTIVITY && kind != KIND_RECEIVER) return className;
 
             String target = identifier.substring(IDENTIFIER_PREFIX.length());
-            if (!target.startsWith(EXTENSION_PREFIX) || kindOf(target) == 0) return className;
+            if (!target.startsWith(EXTENSION_PREFIX) || kindOf(target) != kind) return className;
+
+            Context context = Utils.getContext();
+            if (context == null) return className;
+            // Only the proxy selected for this kind may be swapped. Other components, including
+            // exported ones, keep their class even when the intent carries a crafted identifier.
+            if (!className.equals(proxyFor(context, kind))) return className;
             return target;
         } catch (Throwable throwable) {
             NewXLogger.printException(() -> "Mount proxy resolution failed", throwable);

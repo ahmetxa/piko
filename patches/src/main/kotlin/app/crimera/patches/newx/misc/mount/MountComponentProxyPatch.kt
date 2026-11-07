@@ -46,35 +46,37 @@ private const val CLASS_LOADER_DESCRIPTOR = "Ljava/lang/ClassLoader;"
 
 private val routeMethod =
     methodReference("$MOUNT_PROXY_DESCRIPTOR->route(${INTENT_DESCRIPTOR}Landroid/content/Context;)V")
-private val resolveClassNameMethod =
-    methodReference(
-        "$MOUNT_PROXY_DESCRIPTOR->resolveClassName($STRING_DESCRIPTOR${INTENT_DESCRIPTOR}I)$STRING_DESCRIPTOR",
-    )
 
 /** The framework base class every `android:appComponentFactory` must extend. */
 internal const val FRAMEWORK_FACTORY_DESCRIPTOR = "Landroid/app/AppComponentFactory;"
 
-/** An `AppComponentFactory` callback the hook rewrites, with the matching `MountComponentProxy.KIND_*`. */
+/**
+ * An `AppComponentFactory` callback the hook rewrites and its `MountComponentProxy` resolver,
+ * `(String className, Intent) -> String`. The resolver encodes the component kind in its name so the
+ * hook needs no scratch register: compiled factory overrides can have no free locals.
+ */
 internal data class FactoryCallback(
     val name: String,
     val returnType: String,
-    val kind: Int,
+    val resolverName: String,
 ) {
     /** `(ClassLoader, String className, Intent)`: p1, p2, p3 of the instance method. */
     val parameters = listOf(CLASS_LOADER_DESCRIPTOR, STRING_DESCRIPTOR, INTENT_DESCRIPTOR)
+
+    val resolver: MethodReference =
+        methodReference("$MOUNT_PROXY_DESCRIPTOR->$resolverName($STRING_DESCRIPTOR$INTENT_DESCRIPTOR)$STRING_DESCRIPTOR")
 }
 
-/** Must stay equal to `MountComponentProxy.KIND_ACTIVITY` / `KIND_RECEIVER`. */
 internal val factoryCallbacks =
     listOf(
-        FactoryCallback("instantiateActivity", "Landroid/app/Activity;", kind = 1),
-        FactoryCallback("instantiateReceiver", "Landroid/content/BroadcastReceiver;", kind = 2),
+        FactoryCallback("instantiateActivity", "Landroid/app/Activity;", "resolveActivityClassName"),
+        FactoryCallback("instantiateReceiver", "Landroid/content/BroadcastReceiver;", "resolveReceiverClassName"),
     )
 
 /**
- * Contract (Phase 2): inserts at index 0 of an existing callback implementation
- * `className = MountComponentProxy.resolveClassName(className, intent, kind)`, where className is
- * p2 and intent is p3 of the instance method, and kind is a scratch `const`.
+ * Contract: inserts at index 0 of an existing callback implementation
+ * `invoke-static {p2, p3}, callback.resolver; move-result-object p2` (className = p2, intent = p3).
+ * Uses no scratch register.
  */
 internal fun MutableMethod.insertResolveClassNameHook(callback: FactoryCallback) {
     val classNameRegister = p0Register + 2
@@ -82,20 +84,16 @@ internal fun MutableMethod.insertResolveClassNameHook(callback: FactoryCallback)
     insertHook(
         index = 0,
         // A branch back to the entry would only repeat the idempotent class name rewrite.
-        // p2/p3 are read by the hook; the kind constant must not land on them.
-        excludedRegisters = listOf(classNameRegister, intentRegister),
         relocateBranchTargets = false,
     ) {
-        val kindRegister = scratchRegister()
-        constInt(kindRegister, callback.kind)
-        invokeStatic(resolveClassNameMethod, classNameRegister, intentRegister, kindRegister)
+        invokeStatic(callback.resolver, classNameRegister, intentRegister)
         moveResult(classNameRegister, STRING_DESCRIPTOR)
     }
 }
 
 /**
- * Contract (Phase 2): adds `public <callback>(ClassLoader, String, Intent)<Ret>` to [this] factory
- * class, which declares no such method. Body: the resolve hook, then
+ * Contract: adds `public <callback>(ClassLoader, String, Intent)<Ret>` to [this] factory class, which
+ * declares no such method. Body: the resolve hook, then
  * `invoke-super {p0, p1, p2, p3}, <superclass>-><callback>(...)`, `move-result-object`, `return-object`.
  * [superclass] is this class's direct superclass. Returns the added method.
  */
@@ -107,10 +105,10 @@ internal fun MutableClass.addFactoryCallbackOverride(
         throw PatchException("$type already declares ${callback.name}; it cannot be added again")
     }
 
-    // One local (v0) for the kind constant, then p0..p3 = this, ClassLoader, String, Intent.
+    // No locals: p0..p3 = this, ClassLoader, String, Intent.
     // The four argument registers are the whole invoke-super operand list.
     val placeholder =
-        MethodImplementationBuilder(5).apply {
+        MethodImplementationBuilder(4).apply {
             addInstruction("return-void".toInstruction())
         }.methodImplementation
     val method =
@@ -137,17 +135,14 @@ internal fun MutableClass.addFactoryCallbackOverride(
     method.insertHook(
         index = 0,
         // The placeholder return-void carries no labels, so there are no branch targets to relocate.
-        // The whole frame is live: p0..p3 are read, so only the single local v0 may hold the kind.
-        excludedRegisters = listOf(p0, p0 + 1, p0 + 2, p0 + 3),
         relocateBranchTargets = false,
     ) {
-        val kindRegister = scratchRegister()
-        constInt(kindRegister, callback.kind)
-        invokeStatic(resolveClassNameMethod, p0 + 2, p0 + 3, kindRegister)
+        invokeStatic(callback.resolver, p0 + 2, p0 + 3)
         moveResult(p0 + 2, STRING_DESCRIPTOR)
         invokeSuper(superMethod, p0, p0 + 1, p0 + 2, p0 + 3)
-        moveResult(kindRegister, callback.returnType)
-        returnObject(kindRegister)
+        // p1 (the ClassLoader) is dead after the super call, so it holds the result: no scratch register.
+        moveResult(p0 + 1, callback.returnType)
+        returnObject(p0 + 1)
     }
     // The hook ends with return-object, so the placeholder is now the unreachable last instruction.
     val lastIndex = implementation.instructions.lastIndex

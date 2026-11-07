@@ -111,10 +111,23 @@ public final class MountComponentProxy {
     }
 
     /**
-     * Injection point: start of the app's {@code AppComponentFactory.instantiateActivity} and
-     * {@code instantiateReceiver}, with {@code kind} {@link #KIND_ACTIVITY} or {@link #KIND_RECEIVER}.
-     * Returns the extension class to instantiate in place of the selected proxy, or the original
-     * class name for every other component. Never throws.
+     * Injection point: start of the app's {@code AppComponentFactory.instantiateActivity}. The kind
+     * is part of the method so the hook needs no scratch register: compiled factory overrides can
+     * have no free locals.
+     */
+    public static String resolveActivityClassName(String className, @Nullable Intent intent) {
+        return resolveClassName(className, intent, KIND_ACTIVITY);
+    }
+
+    /** Injection point: start of the app's {@code AppComponentFactory.instantiateReceiver}. */
+    public static String resolveReceiverClassName(String className, @Nullable Intent intent) {
+        return resolveClassName(className, intent, KIND_RECEIVER);
+    }
+
+    /**
+     * Returns the extension class to instantiate in place of the selected proxy of {@code kind}
+     * ({@link #KIND_ACTIVITY} or {@link #KIND_RECEIVER}), or the original class name for every other
+     * component. Never throws.
      */
     public static String resolveClassName(String className, @Nullable Intent intent, int kind) {
         if (intent == null || className == null) return className;
@@ -123,18 +136,20 @@ public final class MountComponentProxy {
             String identifier = intent.getIdentifier();
             if (identifier == null || !identifier.startsWith(IDENTIFIER_PREFIX)) return className;
             ComponentName component = intent.getComponent();
-            // Only swap the component the intent was addressed to, never a different one.
-            if (component != null && !className.equals(component.getClassName())) return className;
+            // route() always sets the proxy component and the framework always passes one, so a
+            // missing or different component is never a legitimate swap target.
+            if (component == null || !className.equals(component.getClassName())) return className;
             if (kind != KIND_ACTIVITY && kind != KIND_RECEIVER) return className;
 
             String target = identifier.substring(IDENTIFIER_PREFIX.length());
-            if (!target.startsWith(EXTENSION_PREFIX) || kindOf(target) != kind) return className;
+            if (!target.startsWith(EXTENSION_PREFIX)) return className;
 
             Context context = Utils.getContext();
             if (context == null) return className;
             // Only the proxy selected for this kind may be swapped. Other components, including
             // exported ones, keep their class even when the intent carries a crafted identifier.
             if (!className.equals(proxyFor(context, kind))) return className;
+            if (kindOf(target) != kind) return className;
             return target;
         } catch (Throwable throwable) {
             NewXLogger.printException(() -> "Mount proxy resolution failed", throwable);

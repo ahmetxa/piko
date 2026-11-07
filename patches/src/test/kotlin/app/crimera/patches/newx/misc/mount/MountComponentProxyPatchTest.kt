@@ -10,6 +10,7 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLa
 import app.morphe.patcher.extensions.InstructionExtensions.removeInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.util.getReference
+import app.morphe.patcher.patch.PatchException
 import app.morphe.patcher.util.proxy.mutableTypes.MutableClass
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import app.morphe.patcher.util.smali.toInstruction
@@ -19,7 +20,6 @@ import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.builder.MethodImplementationBuilder
 import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.Instruction
-import com.android.tools.smali.dexlib2.iface.instruction.NarrowLiteralInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import com.android.tools.smali.dexlib2.immutable.ImmutableAnnotation
@@ -30,19 +30,19 @@ import com.android.tools.smali.dexlib2.immutable.ImmutableMethodParameter
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 class MountComponentProxyPatchTest {
     private val factoryType = "Landroidx/core/app/CoreComponentFactory;"
-    private val resolveDescriptor =
-        "Lapp/morphe/extension/newx/mount/MountComponentProxy;->resolveClassName" +
-            "(Ljava/lang/String;Landroid/content/Intent;I)Ljava/lang/String;"
-    private val constOpcodes = setOf(Opcode.CONST_4, Opcode.CONST_16, Opcode.CONST)
 
     @Test
     fun `a factory without the callback gains an override that resolves before calling super`() {
         assertEquals(
-            listOf("instantiateActivity" to 1, "instantiateReceiver" to 2),
-            factoryCallbacks.map { it.name to it.kind },
+            listOf(
+                Triple("instantiateActivity", "Landroid/app/Activity;", "resolveActivityClassName"),
+                Triple("instantiateReceiver", "Landroid/content/BroadcastReceiver;", "resolveReceiverClassName"),
+            ),
+            factoryCallbacks.map { Triple(it.name, it.returnType, it.resolverName) },
         )
 
         factoryCallbacks.forEach { callback ->
@@ -61,13 +61,10 @@ class MountComponentProxyPatchTest {
             assertEquals(0, added.accessFlags and AccessFlags.FINAL.value, "${callback.name} must not be final")
             assertEquals(0, added.accessFlags and AccessFlags.SYNTHETIC.value, "${callback.name} must not be synthetic")
 
-            val registerCount = added.implementation!!.registerCount
-            val p0 = registerCount - 4
-            val (p1, p2, p3) = Triple(p0 + 1, p0 + 2, p0 + 3)
+            assertEquals(4, added.implementation!!.registerCount, "${callback.name}: p0..p3 only, no scratch")
             val instructions = added.instructions.toList()
             assertEquals(
                 listOf(
-                    instructions[0].opcode,
                     Opcode.INVOKE_STATIC,
                     Opcode.MOVE_RESULT_OBJECT,
                     Opcode.INVOKE_SUPER,
@@ -78,36 +75,18 @@ class MountComponentProxyPatchTest {
                 "${callback.name}: unexpected override body",
             )
 
-            val constant = instructions[0]
-            assertTrue(constant.opcode in constOpcodes, "${callback.name}: first instruction must load the kind")
-            val kindRegister = (constant as OneRegisterInstruction).registerA
-            assertEquals(callback.kind, (constant as NarrowLiteralInstruction).narrowLiteral)
-            assertTrue(kindRegister !in p0..p3, "${callback.name}: kind scratch v$kindRegister clobbers this or a parameter")
+            assertResolveHook(callback, instructions[0], instructions[1])
 
-            val resolve = instructions[1]
-            assertEquals(Opcode.INVOKE_STATIC, resolve.opcode)
-            assertEquals(resolveDescriptor, resolve.getReference<MethodReference>().toString())
-            assertEquals(listOf(p2, p3, kindRegister), resolve.registers())
-
-            val moveResult = instructions[2]
-            assertEquals(Opcode.MOVE_RESULT_OBJECT, moveResult.opcode)
-            assertEquals(p2, (moveResult as OneRegisterInstruction).registerA, "the resolved name must replace p2")
-
-            val superCall = instructions[3]
-            assertEquals(Opcode.INVOKE_SUPER, superCall.opcode)
+            val superCall = instructions[2]
             assertEquals(
                 "Landroid/app/AppComponentFactory;->${callback.name}" +
                     "(Ljava/lang/ClassLoader;Ljava/lang/String;Landroid/content/Intent;)${callback.returnType}",
                 superCall.getReference<MethodReference>().toString(),
             )
-            assertEquals(listOf(p0, p1, p2, p3), superCall.registers())
+            assertEquals(listOf(0, 1, 2, 3), superCall.registers())
 
-            val superResult = instructions[4]
-            assertEquals(Opcode.MOVE_RESULT_OBJECT, superResult.opcode)
-            val resultRegister = (superResult as OneRegisterInstruction).registerA
-            val returned = instructions[5]
-            assertEquals(Opcode.RETURN_OBJECT, returned.opcode)
-            assertEquals(resultRegister, (returned as OneRegisterInstruction).registerA)
+            assertEquals(1, (instructions[3] as OneRegisterInstruction).registerA, "super result goes to p1")
+            assertEquals(1, (instructions[4] as OneRegisterInstruction).registerA, "p1 is returned")
         }
     }
 
@@ -115,12 +94,13 @@ class MountComponentProxyPatchTest {
     fun `an existing callback keeps its body behind the resolve hook`() {
         factoryCallbacks.forEach { callback ->
             val method = existingOverride(callback)
+            val registersBefore = method.implementation!!.registerCount
             method.insertResolveClassNameHook(callback)
 
+            assertEquals(registersBefore, method.implementation!!.registerCount, "${callback.name}: frame must not change")
             val instructions = method.instructions.toList()
             assertEquals(
                 listOf(
-                    instructions[0].opcode,
                     Opcode.INVOKE_STATIC,
                     Opcode.MOVE_RESULT_OBJECT,
                     Opcode.INVOKE_SUPER,
@@ -128,23 +108,86 @@ class MountComponentProxyPatchTest {
                     Opcode.RETURN_OBJECT,
                 ),
                 instructions.map { it.opcode },
-                "${callback.name}: hook must be a 3-instruction prefix before the original body",
+                "${callback.name}: hook must be a 2-instruction prefix before the original body",
             )
 
-            val registerCount = method.implementation!!.registerCount
-            val p0 = registerCount - 4
-            val kindRegister = (instructions[0] as OneRegisterInstruction).registerA
-            assertEquals(callback.kind, (instructions[0] as NarrowLiteralInstruction).narrowLiteral)
-            assertTrue(kindRegister !in p0..(p0 + 3), "${callback.name}: scratch clobbers this or a parameter")
-            assertEquals(resolveDescriptor, instructions[1].getReference<MethodReference>().toString())
-            assertEquals(listOf(p0 + 2, p0 + 3, kindRegister), instructions[1].registers())
-            assertEquals(p0 + 2, (instructions[2] as OneRegisterInstruction).registerA)
+            // 6 registers: p0 = v2.
+            val p0 = registersBefore - 4
+            assertResolveHook(callback, instructions[0], instructions[1], p0)
             assertEquals(
                 listOf(p0, p0 + 1, p0 + 2, p0 + 3),
-                instructions[3].registers(),
+                instructions[2].registers(),
                 "the original super call must be preserved",
             )
+            assertEquals(0, (instructions[3] as OneRegisterInstruction).registerA)
+            assertEquals(0, (instructions[4] as OneRegisterInstruction).registerA)
         }
+    }
+
+    // Guards the 12.40.1 root-mount abort: hooking a compiled androidx CoreComponentFactory override
+    // that declares no locals (.registers 4, p0..p3 only) must not abort the mount patch, because
+    // a PatchException there takes every dependent patch (Settings, Crash logs, Inline download)
+    // down with it. The hook needs no scratch register, so the frame must stay exactly as it was.
+    @Test
+    fun `a callback with no locals is hooked without aborting the patch`() {
+        factoryCallbacks.forEach { callback ->
+            val method = zeroLocalsOverride(callback)
+            assertEquals(4, method.implementation!!.registerCount, "fixture must declare zero locals")
+
+            try {
+                method.insertResolveClassNameHook(callback)
+            } catch (exception: PatchException) {
+                fail("${callback.name}: hooking a zero-locals override must succeed, but threw: ${exception.message}")
+            }
+
+            assertEquals(4, method.implementation!!.registerCount, "${callback.name}: frame must stay unchanged")
+            val instructions = method.instructions.toList()
+            assertEquals(
+                listOf(
+                    Opcode.INVOKE_STATIC,
+                    Opcode.MOVE_RESULT_OBJECT,
+                    Opcode.INVOKE_SUPER,
+                    Opcode.MOVE_RESULT_OBJECT,
+                    Opcode.INVOKE_STATIC,
+                    Opcode.MOVE_RESULT_OBJECT,
+                    Opcode.CHECK_CAST,
+                    Opcode.RETURN_OBJECT,
+                ),
+                instructions.map { it.opcode },
+                "${callback.name}: hook prefix plus the original six-instruction body",
+            )
+
+            assertResolveHook(callback, instructions[0], instructions[1])
+
+            // The original tail is intact with the same registers.
+            assertEquals(listOf(0, 1, 2, 3), instructions[2].registers())
+            assertEquals(1, (instructions[3] as OneRegisterInstruction).registerA)
+            assertEquals(listOf(1), instructions[4].registers())
+            assertEquals(1, (instructions[5] as OneRegisterInstruction).registerA)
+            assertEquals(1, (instructions[6] as OneRegisterInstruction).registerA)
+            assertEquals(1, (instructions[7] as OneRegisterInstruction).registerA)
+        }
+    }
+
+    /** `invoke-static {p2, p3}, callback.resolver` then `move-result-object p2` (p0 = [p0]). */
+    private fun assertResolveHook(
+        callback: FactoryCallback,
+        invoke: Instruction,
+        moveResult: Instruction,
+        p0: Int = 0,
+    ) {
+        assertEquals(Opcode.INVOKE_STATIC, invoke.opcode, "${callback.name}: resolver call")
+        val reference = invoke.getReference<MethodReference>()!!
+        assertEquals(callback.resolver.definingClass, reference.definingClass)
+        assertEquals(callback.resolverName, reference.name)
+        assertEquals(callback.resolver.name, reference.name)
+        assertEquals(listOf("Ljava/lang/String;", "Landroid/content/Intent;"), reference.parameterTypes.map(CharSequence::toString))
+        assertEquals("Ljava/lang/String;", reference.returnType)
+        assertEquals(callback.resolver.toString(), reference.toString())
+        assertEquals(listOf(p0 + 2, p0 + 3), invoke.registers(), "${callback.name}: resolver takes (className, intent)")
+
+        assertEquals(Opcode.MOVE_RESULT_OBJECT, moveResult.opcode)
+        assertEquals(p0 + 2, (moveResult as OneRegisterInstruction).registerA, "the resolved name must replace p2")
     }
 
     private fun Instruction.registers(): List<Int> {
@@ -208,6 +251,43 @@ class MountComponentProxyPatchTest {
         )
         // Drop the placeholder return-void left behind the inserted body.
         method.removeInstruction(3)
+        return method
+    }
+
+    /**
+     * The shape androidx ships in `CoreComponentFactory`: `.registers 4` (ZERO locals; v0..v3 are
+     * p0..p3) and the result of `super` is rewritten in place through p1:
+     * `super` -> `move-result-object p1` -> `checkCompatWrapper(p1)` -> `check-cast` -> `return-object p1`.
+     */
+    private fun zeroLocalsOverride(callback: FactoryCallback): MutableMethod {
+        val implementation = MethodImplementationBuilder(4)
+        implementation.addInstruction("return-void".toInstruction())
+        val method =
+            MutableMethod(
+                ImmutableMethod(
+                    factoryType,
+                    callback.name,
+                    callback.parameters.map { ImmutableMethodParameter(it, emptySet<ImmutableAnnotation>(), null) },
+                    callback.returnType,
+                    AccessFlags.PUBLIC.value,
+                    emptySet<ImmutableAnnotation>(),
+                    emptySet<HiddenApiRestriction>(),
+                    implementation.methodImplementation,
+                ),
+            )
+        method.addInstructionsWithLabels(
+            0,
+            """
+                invoke-super {p0, p1, p2, p3}, Landroid/app/AppComponentFactory;->${callback.name}(Ljava/lang/ClassLoader;Ljava/lang/String;Landroid/content/Intent;)${callback.returnType}
+                move-result-object p1
+                invoke-static {p1}, Landroidx/core/app/CoreComponentFactory;->checkCompatWrapper(Ljava/lang/Object;)Ljava/lang/Object;
+                move-result-object p1
+                check-cast p1, ${callback.returnType}
+                return-object p1
+            """.trimIndent(),
+        )
+        // Drop the placeholder return-void left behind the inserted body.
+        method.removeInstruction(6)
         return method
     }
 }

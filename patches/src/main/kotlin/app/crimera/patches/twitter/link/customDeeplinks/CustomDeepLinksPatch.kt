@@ -3,17 +3,20 @@ package app.crimera.patches.twitter.link.customDeeplinks
 import app.crimera.patches.twitter.utils.Constants.COMPATIBILITY_X
 import app.morphe.patcher.patch.PatchException
 import app.morphe.patcher.patch.booleanOption
-import app.morphe.patcher.patch.resourcePatch
+import app.morphe.patcher.patch.document
+import app.morphe.patcher.patch.patch
+import app.morphe.patcher.patch.patch
 import app.morphe.patcher.patch.stringsOption
 import app.morphe.util.asSequence
 
 @Suppress("unused")
 val customDeepLinksPatch =
-    resourcePatch(
+    patch(
         name = "Handle custom twitter links",
         description =
             "Adds support for opening custom twitter links such as vxtwitter, fxtwitter, and fixupx within the app. " +
                 "These will have to be manually enabled under the \"Open by default\" section in the app info!",
+        default = false,
     ) {
         val customLinkHosts by stringsOption(
             key = "customLinkHosts",
@@ -38,6 +41,7 @@ val customDeepLinksPatch =
         )
 
         compatibleWith(COMPATIBILITY_X)
+        category("Legacy")
         dependsOn(handleCustomDeepLinksPatch)
 
         execute {

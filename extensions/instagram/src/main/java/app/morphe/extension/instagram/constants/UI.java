@@ -6,6 +6,7 @@
 
 package app.morphe.extension.instagram.constants;
 
+import app.morphe.extension.instagram.utils.InstaUtils;
 import static app.morphe.extension.instagram.utils.IgStr.str;
 
 import android.app.Dialog;
@@ -42,7 +43,7 @@ public class UI {
     public static final String DRAWABLE_DEBUG_ICON = "instagram_app_instagram_pano_outline_24";
     public static final String DRAWABLE_BLUB_ICON = "instagram_bulb_outline_24";
     public static final String DRAWABLE_GEAR_ICON = "instagram_settings_pano_filled_24";
-    public static final String DRAWABLE_ADS_ICON = "instagram_shield_outline_24";
+    public static final String DRAWABLE_ADS_ICON = "instagram_ads_outline_24";
     public static final String DRAWABLE_GHOST_ICON = "piko_ghost_icon";
     public static final String DRAWABLE_STACK_ICON = "fb_ic_changed_beliefs_outline_24";
     public static final String DRAWABLE_HISTORY_ICON = "instagram_history_outline_24";
@@ -217,7 +218,7 @@ public class UI {
                     String selectedOption = options.get(which);
 
                     if (selectedOption.equals(str("piko_ok"))) {
-                        Utils.restartApp(context);
+                        InstaUtils.restartApp(context);
 
                     }
                 } catch (Exception e) {

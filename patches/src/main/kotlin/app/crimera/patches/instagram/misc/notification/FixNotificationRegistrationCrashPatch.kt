@@ -7,14 +7,12 @@
 package app.crimera.patches.instagram.misc.notification
 
 import app.crimera.patches.instagram.utils.Constants.COMPATIBILITY_INSTAGRAM
-import app.crimera.patches.instagram.utils.methodReference
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.extensions.InstructionExtensions.addInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.methodCall
-import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.patch
 import app.morphe.patcher.util.getFreeRegisterProvider
-import app.morphe.patcher.util.matchSingle
 import app.morphe.patcher.util.registersUsed
 import com.android.tools.smali.dexlib2.Opcode
 
@@ -49,19 +47,19 @@ private object NotificationTokenRegistrationFingerprint : Fingerprint(
 
 @Suppress("unused")
 val fixNotificationRegistrationCrashPatch =
-    bytecodePatch(
+    patch(
         description =
             "Prevents Instagram from crashing on launch while setting up push notifications on Android 12 and later.",
     ) {
         compatibleWith(COMPATIBILITY_INSTAGRAM)
 
         execute {
-            NotificationTokenRegistrationFingerprint.matchSingle().let { match ->
-                match.method.apply {
+            NotificationTokenRegistrationFingerprint.let {
+                it.method.apply {
                     // Request code and flags share the zero register.
-                    val callIndex = match.instructionMatches.first().index
-                    val reference = match.instructionMatches.first().methodReference
-                    val registers = match.instructionMatches.first().instruction.registersUsed
+                    val callIndex = it.instructionMatches.first().index
+                    val reference = it.instructionMatches.first().methodReference
+                    val registers = it.instructionMatches.first().instruction.registersUsed
 
                     val flagsRegister =
                         getFreeRegisterProvider(

@@ -11,41 +11,34 @@ import app.crimera.patches.instagram.utils.Constants.COMPATIBILITY_INSTAGRAM
 import app.crimera.patches.instagram.utils.Constants.PATCHES_DESCRIPTOR
 import app.crimera.patches.instagram.utils.Constants.USER_SESSION_CLASS
 import app.crimera.patches.instagram.utils.enableSettings
-import app.crimera.patches.instagram.utils.methodReference
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.InstructionLocation.MatchAfterImmediately
 import app.morphe.patcher.InstructionLocation.MatchAfterWithin
 import app.morphe.patcher.Match
-import app.morphe.patcher.extensions.InstructionExtensions.addInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.methodCall
 import app.morphe.patcher.opcode
-import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.patch.PatchException
-import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.patch
 import app.morphe.patcher.string
-import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
-import app.morphe.patcher.util.smali.toInstruction
 import app.morphe.patcher.util.addInstructionsAtControlFlowLabel
 import app.morphe.patcher.util.findFreeRegister
 import app.morphe.patcher.util.getReference
-import app.morphe.util.indexOfFirstInstructionOrThrow
-import app.morphe.patcher.util.matchSingle
 import app.morphe.patcher.util.p0Register
+import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import app.morphe.patcher.util.registersUsed
+import app.morphe.patcher.util.smali.toInstruction
+import app.morphe.util.indexOfFirstInstructionOrThrow
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
-import com.android.tools.smali.dexlib2.builder.MethodImplementationBuilder
 import com.android.tools.smali.dexlib2.builder.instruction.BuilderInstruction10t
 import com.android.tools.smali.dexlib2.builder.instruction.BuilderInstruction21t
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
-import com.android.tools.smali.dexlib2.immutable.ImmutableMethod
-import com.android.tools.smali.dexlib2.immutable.ImmutableMethodParameter
 
 private const val LIST = "Ljava/util/List;"
 private const val OBJECT = "Ljava/lang/Object;"
@@ -116,7 +109,6 @@ private object InitialTabPositionFingerprint : Fingerprint(
     ),
 )
 
-context(patchContext: BytecodePatchContext)
 private fun installInitialTabPosition() {
     InitialTabPositionFingerprint.let {
         // FEED -> FEED skips normal tab changes, so a reordered pager must be positioned during initialization.
@@ -127,7 +119,6 @@ private fun installInitialTabPosition() {
 /**
  * Fragment name field of the navigation enum, which the constructor stores from the fragment literal parameter.
  */
-context(patchContext: BytecodePatchContext)
 private fun navigationFragmentField(enumMatch: Match): FieldReference {
     val literalRegister = enumMatch.instructionMatches[1].getInstruction<OneRegisterInstruction>().registerA
     val constructorCall = enumMatch.instructionMatches[2]
@@ -154,51 +145,18 @@ private fun requireLocalRegisters(method: MutableMethod, registers: List<Int>) {
     }
 }
 
-private fun createFragmentNameBridge(fragmentField: FieldReference): MutableMethod {
-    val implementation =
-        MethodImplementationBuilder(1).apply {
-            addInstruction("check-cast v0, ${fragmentField.definingClass}".toInstruction())
-            addInstruction("iget-object v0, v0, $fragmentField".toInstruction())
-            addInstruction("return-object v0".toInstruction())
-        }.methodImplementation
-    return MutableMethod(
-        ImmutableMethod(
-            EXTENSION,
-            FRAGMENT_NAME_BRIDGE,
-            listOf(ImmutableMethodParameter(OBJECT, emptySet(), null)),
-            STRING,
-            AccessFlags.PRIVATE.value or AccessFlags.STATIC.value,
-            emptySet(),
-            emptySet(),
-            implementation,
-        ),
-    )
-}
-
-context(patchContext: BytecodePatchContext)
 private fun installFragmentNameBridge(fragmentField: FieldReference) {
-    val extensionClass = patchContext.mutableClassDefBy(EXTENSION)
-    val bridgeCandidates =
-        extensionClass.methods.filter { method ->
-            method.name == FRAGMENT_NAME_BRIDGE &&
-                method.parameterTypes.map(CharSequence::toString) == listOf(OBJECT) &&
-                method.returnType == STRING
-        }
-    if (bridgeCandidates.size != 1) {
-        throw PatchException(
-            "Expected one navigation fragment-name bridge, found ${bridgeCandidates.size}",
-        )
-    }
-    val bridgeStub = bridgeCandidates.single()
-    if (!AccessFlags.PRIVATE.isSet(bridgeStub.accessFlags) ||
-        !AccessFlags.STATIC.isSet(bridgeStub.accessFlags) ||
-        !AccessFlags.NATIVE.isSet(bridgeStub.accessFlags)
-    ) {
-        throw PatchException("Navigation fragment-name bridge has an invalid signature")
-    }
-
-    extensionClass.methods.remove(bridgeStub)
-    extensionClass.methods.add(createFragmentNameBridge(fragmentField))
+    Fingerprint(
+        definingClass = EXTENSION,
+        name = FRAGMENT_NAME_BRIDGE,
+    ).method.addInstructions(
+        0,
+        """
+            check-cast v0, ${fragmentField.definingClass}
+            iget-object v0, v0, $fragmentField
+            return-object v0
+        """
+    )
 }
 
 private fun installTransform(navigationMatch: Match) {
@@ -273,7 +231,7 @@ private fun installStartup(
 
 @Suppress("unused")
 val navigationBarPatch =
-    bytecodePatch(
+    patch(
         name = "Customize navigation bar",
         description = "Choose which tabs appear in the bottom navigation bar and reorder them",
     ) {
@@ -281,7 +239,7 @@ val navigationBarPatch =
         dependsOn(settingsPatch)
 
         execute {
-            val navigationMatch = NavigationBarFingerprint.matchSingle()
+            val navigationMatch = NavigationBarFingerprint.match()
             val allCandidates = navigationMatch.instructionMatches[1].methodReference
             // The startup hook calls the candidates provider from another class.
             Fingerprint(
@@ -291,10 +249,10 @@ val navigationBarPatch =
                 parameters = listOf(USER_SESSION_CLASS),
                 returnType = LIST,
             ).match()
-            val fragmentField = navigationFragmentField(NavigationEnumFingerprint.matchSingle())
+            val fragmentField = navigationFragmentField(NavigationEnumFingerprint.match())
 
             installFragmentNameBridge(fragmentField)
-            installStartup(StartupFingerprint.matchSingle().method, allCandidates)
+            installStartup(StartupFingerprint.method, allCandidates)
             installTransform(navigationMatch)
             installInitialTabPosition()
             enableSettings("hideNavigationButtons")

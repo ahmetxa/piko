@@ -16,8 +16,6 @@ import app.crimera.patches.instagram.utils.Constants.COMPATIBILITY_INSTAGRAM
 import app.crimera.patches.instagram.utils.Constants.PATCHES_DESCRIPTOR
 import app.crimera.patches.instagram.utils.Constants.USER_SESSION_CLASS
 import app.crimera.patches.instagram.utils.enableSettings
-import app.crimera.patches.instagram.utils.fieldReference
-import app.crimera.patches.instagram.utils.methodReference
 import app.crimera.patches.instagram.utils.typeReference
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.InstructionLocation.MatchAfterImmediately
@@ -28,19 +26,16 @@ import app.morphe.patcher.fieldAccess
 import app.morphe.patcher.methodCall
 import app.morphe.patcher.newInstance
 import app.morphe.patcher.opcode
-import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.patch.PatchException
-import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.patch
 import app.morphe.patcher.resource.ResourceType
 import app.morphe.patcher.resourceLiteral
 import app.morphe.patcher.string
-import app.morphe.patcher.util.smali.ExternalLabel
 import app.morphe.patcher.util.getFreeRegisterProvider
 import app.morphe.patcher.util.getReference
-import app.morphe.util.indexOfFirstInstructionReversedOrThrow
-import app.morphe.patcher.util.matchSingle
 import app.morphe.patcher.util.registersUsed
-import com.android.tools.smali.dexlib2.AccessFlags
+import app.morphe.patcher.util.smali.ExternalLabel
+import app.morphe.util.indexOfFirstInstructionReversedOrThrow
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
@@ -75,17 +70,17 @@ private object VisualMessageBinderFingerprint : Fingerprint(
 // Fills the views of a photo or video message with the message; it is the binder's only method with two object parameters.
 private object VisualMessageBindFingerprint : Fingerprint(
     classFingerprint = VisualMessageBinderFingerprint,
+    isStatic = false,
     returnType = "V",
     parameters = listOf("L", "L"),
-    custom = { method, _ -> !AccessFlags.STATIC.isSet(method.accessFlags) },
 )
 
 @Suppress("unused")
 val makeEphemeralPermanentPatch =
-    bytecodePatch(
+    patch(
         name = "Make ephemeral media permanent",
         description = "Changes unexpired view once, view twice media to permanent view.",
-        default = false,
+        default = true,
     ) {
         compatibleWith(COMPATIBILITY_INSTAGRAM)
         dependsOn(settingsPatch, messageInfoEntity, saveAllMessagesPatch, directItemEntity, userDataEntity)
@@ -135,7 +130,6 @@ val makeEphemeralPermanentPatch =
         }
     }
 
-context(_: BytecodePatchContext)
 private fun markServerResponseParsers(parserType: String) {
     val match = Fingerprint(
         filters = listOf(
@@ -143,7 +137,7 @@ private fun markServerResponseParsers(parserType: String) {
             methodCall(parameters = listOf("Ljava/io/InputStream;"), returnType = parserType),
             opcode(Opcode.MOVE_RESULT_OBJECT, MatchAfterImmediately()),
         ),
-    ).matchSingle()
+    ).match()
     val result = match.instructionMatches.last()
     val register = result.instruction.registersUsed.single()
     // Mark the HTTP parser itself; local message deserializers create different instances.
@@ -174,10 +168,9 @@ private fun ephemeralMediaReceiptProducerFingerprint(eventType: String) = Finger
     ),
 )
 
-context(patchContext: BytecodePatchContext)
 private fun suppressEphemeralMediaReceipts() {
     val eventType = EphemeralMediaSeenReceiptFingerprint.instructionMatches.first().typeReference
-    val producerMatch = ephemeralMediaReceiptProducerFingerprint(eventType).matchSingle()
+    val producerMatch = ephemeralMediaReceiptProducerFingerprint(eventType).match()
     val producer = producerMatch.method
     val unseenCall = producerMatch.instructionMatches[1]
     val unseenReference = unseenCall.methodReference

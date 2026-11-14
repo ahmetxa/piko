@@ -18,7 +18,7 @@ import app.morphe.patcher.fieldAccess
 import app.morphe.patcher.literal
 import app.morphe.patcher.methodCall
 import app.morphe.patcher.opcode
-import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.patch
 import app.morphe.patcher.string
 import app.morphe.patcher.util.smali.ExternalLabel
 import com.android.tools.smali.dexlib2.Opcode
@@ -64,10 +64,10 @@ internal object ChatRecyclerViewRelatedFingerprint : Fingerprint(
 
 @Suppress("unused")
 val disableScreenshotDetection =
-    bytecodePatch(
+    patch(
         name = "Disable screenshot detection",
         description = "Disables screenshots detection in DM",
-        default = false,
+        default = true,
     ) {
         dependsOn(settingsPatch)
         compatibleWith(COMPATIBILITY_INSTAGRAM)

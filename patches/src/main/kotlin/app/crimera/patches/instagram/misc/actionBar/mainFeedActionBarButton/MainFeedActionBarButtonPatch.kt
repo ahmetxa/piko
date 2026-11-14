@@ -17,12 +17,12 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLa
 import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.patch.PatchException
-import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.mutableClassDefBy
+import app.morphe.patcher.patch.patch
 import app.morphe.patcher.string
-import app.morphe.patcher.util.smali.ExternalLabel
 import app.morphe.patcher.util.getReference
-import app.morphe.patcher.util.matchSingle
 import app.morphe.patcher.util.registersUsed
+import app.morphe.patcher.util.smali.ExternalLabel
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.builder.BuilderOffsetInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
@@ -39,9 +39,9 @@ private object HomeActionModelFingerprint : Fingerprint(
     strings = listOf("share", "news", "quick_snap", "manage_feeds"),
 )
 
-val hideHomeActionButtonsPatch = bytecodePatch {
+val hideHomeActionButtonsPatch = patch {
     execute {
-        val method = HomeActionModelFingerprint.matchSingle().method
+        val method = HomeActionModelFingerprint.method
         val callIndex = method.instructions.withIndex().filter { (_, instruction) ->
             val reference = (instruction as? ReferenceInstruction)?.reference as? MethodReference
             reference?.parameterTypes?.map(CharSequence::toString) ==
@@ -88,14 +88,14 @@ val hideHomeActionButtonsPatch = bytecodePatch {
 }
 
 val mainFeedActionBarButtonPatch =
-    bytecodePatch(
+    patch(
         description = "This patch is adds support for adding buttons on main feed action bar.",
     ) {
         compatibleWith(COMPATIBILITY_INSTAGRAM)
 
         execute {
 
-            val binding = BindMainFeedActionBarFingerprint.matchSingle().method
+            val binding = BindMainFeedActionBarFingerprint.method
             val actionBar = "Linstagram/features/feed/mainfeed/actionbar/MainFeedActionBar;"
             val candidates = mutableListOf(binding)
             // Newer versions move the layout update into a method on the action bar itself.

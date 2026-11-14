@@ -17,7 +17,8 @@ import app.crimera.utils.changeFirstString
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
-import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.mutableClassDefBy
+import app.morphe.patcher.patch.patch
 import app.morphe.patcher.util.getReference
 import app.morphe.util.indexOfFirstInstruction
 import app.morphe.patcher.util.registersUsed
@@ -28,11 +29,13 @@ internal const val CLASS_NAME = "${PATCHES_DESCRIPTOR}/profile/MoreProfileInfo;"
 
 @Suppress("unused")
 val moreProfileInfoPatch =
-    bytecodePatch(
+    patch(
         name = "More information on profile",
         description = "Adds more details on the profile page",
+        default = false,
     ) {
         compatibleWith(COMPATIBILITY_X)
+        category("Legacy")
         dependsOn(settingsPatch, moreProfileInfoResourcePatch, twitterUserEntity, decoderEntity)
         execute {
 

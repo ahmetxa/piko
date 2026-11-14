@@ -15,14 +15,11 @@ import app.morphe.patcher.InstructionLocation.MatchAfterImmediately
 import app.morphe.patcher.InstructionLocation.MatchAfterWithin
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
-import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.methodCall
 import app.morphe.patcher.opcode
-import app.morphe.patcher.patch.BytecodePatchContext
-import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.patch
 import app.morphe.patcher.string
 import app.morphe.patcher.util.smali.ExternalLabel
-import app.morphe.patcher.util.matchSingle
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.builder.instruction.BuilderInstruction21t
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
@@ -43,9 +40,8 @@ private fun nullableFollowedByUpdateFilters(updaterCall: InstructionFilter) = li
 /**
  * Missing suggestion metadata must not overwrite an existing relationship with false.
  */
-context(_: BytecodePatchContext)
 private fun Fingerprint.preserveNullableFollowedBy() {
-    val match = matchSingle()
+    val match = match()
     val guardIndex = match.instructionMatches.first().index
     val callIndex = match.instructionMatches.last().index
     val implementation = match.method.implementation!!
@@ -59,7 +55,7 @@ private fun Fingerprint.preserveNullableFollowedBy() {
     )
 }
 
-val preserveUnknownFriendshipStatusPatch = bytecodePatch(
+val preserveUnknownFriendshipStatusPatch = patch(
     description = "Preserves friendship status when suggested-user metadata omits followed_by.",
 ) {
     compatibleWith(COMPATIBILITY_INSTAGRAM)
@@ -71,24 +67,26 @@ val preserveUnknownFriendshipStatusPatch = bytecodePatch(
             parameters = listOf(BOXED_BOOLEAN),
             returnType = "V",
             filters = listOf(string("is_following_current_user")),
-        ).matchSingle().originalMethod
+        ).originalMethod
         val updater = Fingerprint(
             definingClass = "Lcom/instagram/user/model/UserExtKt;",
             parameters = listOf(USER_MODEL_CLASS_NAME, "Z"),
             returnType = "V",
             filters = listOf(methodCall(reference = currentUserSetter)),
-        ).matchSingle().originalMethod
+        ).originalMethod
         val followedByGetter = Fingerprint(
             definingClass = USER_MODEL_CLASS_NAME,
             parameters = emptyList(),
             returnType = BOXED_BOOLEAN,
             filters = listOf(string("followed_by")),
-        ).matchSingle().originalMethod
+        ).originalMethod
 
         fun updaterCall() = methodCall(reference = updater, location = MatchAfterImmediately())
 
         // A null followed-by keeps the existing relationship.
         Fingerprint(
+            parameters = emptyList(),
+            returnType = "Ljava/lang/Object;",
             filters = listOf(
                 methodCall(reference = followedByGetter),
                 opcode(Opcode.MOVE_RESULT_OBJECT, location = MatchAfterImmediately()),
@@ -97,7 +95,7 @@ val preserveUnknownFriendshipStatusPatch = bytecodePatch(
                 opcode(Opcode.MOVE_RESULT, location = MatchAfterImmediately()),
                 updaterCall(),
             ),
-        ).matchSingle().let {
+        ).let {
             val converterIndex = it.instructionMatches[2].index
             val sourceRegister = it.instructionMatches[1].getInstruction<OneRegisterInstruction>().registerA
             it.method.addInstructionsWithLabels(

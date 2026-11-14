@@ -14,24 +14,23 @@ import app.crimera.patches.instagram.utils.Constants.COMPATIBILITY_INSTAGRAM
 import app.crimera.patches.instagram.utils.Constants.LINKS_DESCRIPTOR
 import app.crimera.patches.instagram.utils.Constants.USER_SESSION_CLASS
 import app.crimera.patches.instagram.utils.enableSettings
-import app.crimera.patches.instagram.utils.fieldReference
-import app.crimera.patches.instagram.utils.methodReference
 import app.morphe.patcher.extensions.InstructionExtensions.addInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
-import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.classDefBy
+import app.morphe.patcher.patch.mutableClassDefBy
+import app.morphe.patcher.patch.patch
 import app.morphe.patcher.util.getReference
-import app.morphe.patcher.util.matchSingle
 import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.reference.TypeReference
 
 @Suppress("unused")
 val viewStoriesAnonymouslyPatch =
-    bytecodePatch(
+    patch(
         name = "View stories anonymously",
-        default = false,
+        default = true,
     ) {
         dependsOn(
             settingsPatch,
@@ -62,7 +61,7 @@ val viewStoriesAnonymouslyPatch =
             }
             addStorySeenResultHooks(requestType, RequestSucceededExtensionFingerprint.method)
 
-            PendingStoriesEmptyFingerprint.let {
+            PendingStoriesEmptyFingerprint.match(StorySeenUriBuilderFingerprint.originalClassDef).let {
                 val returnIndex = it.instructionMatches.last().index
                 val seenRegister = it.instructionMatches.last().getInstruction<OneRegisterInstruction>().registerA
                 it.method.addInstructions(
@@ -101,7 +100,7 @@ val viewStoriesAnonymouslyPatch =
             val reelTypeField = classDefBy(reelModelClass).fields.single { it.type == reelTypeClass }
 
             val headerBindingMethod = StoryHeaderBindingFingerprint.matchOrNull()?.method
-                ?: StoryToolbarBindingFingerprint.matchSingle().method
+                ?: StoryToolbarBindingFingerprint.method
             val holderClass = headerBindingMethod.parameterTypes[STORY_HEADER_HOLDER_PARAMETER].toString()
             addStoryHeaderCaptureHook(headerBindingMethod)
             addStoryHeaderBridgeHook(
@@ -113,7 +112,7 @@ val viewStoriesAnonymouslyPatch =
             )
 
             val standardProgressMethod = StandardStoryProgressFingerprint.matchOrNull()?.method
-                ?: DelegatedStoryProgressFingerprint.matchSingle().method
+                ?: DelegatedStoryProgressFingerprint.method
             listOf(
                 Triple(
                     PromptStoryProgressFingerprint.method,

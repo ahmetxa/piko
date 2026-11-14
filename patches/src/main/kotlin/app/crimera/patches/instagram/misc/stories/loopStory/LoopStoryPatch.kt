@@ -10,8 +10,6 @@ import app.crimera.patches.instagram.misc.settings.settingsPatch
 import app.crimera.patches.instagram.utils.Constants.COMPATIBILITY_INSTAGRAM
 import app.crimera.patches.instagram.utils.Constants.PREF_CALL_DESCRIPTOR
 import app.crimera.patches.instagram.utils.enableSettings
-import app.crimera.patches.instagram.utils.fieldReference
-import app.crimera.patches.instagram.utils.methodReference
 import app.crimera.patches.instagram.utils.typeReference
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.InstructionLocation.MatchAfterImmediately
@@ -22,12 +20,13 @@ import app.morphe.patcher.fieldAccess
 import app.morphe.patcher.methodCall
 import app.morphe.patcher.opcode
 import app.morphe.patcher.patch.PatchException
-import app.morphe.patcher.patch.bytecodePatch
-import app.morphe.patcher.util.smali.ExternalLabel
-import app.morphe.patcher.util.p0Register
+import app.morphe.patcher.patch.classDefBy
+import app.morphe.patcher.patch.classDefByOrNull
+import app.morphe.patcher.patch.patch
 import app.morphe.patcher.util.getReference
-import app.morphe.patcher.util.matchSingle
+import app.morphe.patcher.util.p0Register
 import app.morphe.patcher.util.registersUsed
+import app.morphe.patcher.util.smali.ExternalLabel
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
@@ -105,7 +104,7 @@ private fun storyRelativeDirectSeekFingerprint(playerType: String) = Fingerprint
 
 @Suppress("unused")
 val loopStoryPatch =
-    bytecodePatch(
+    patch(
         name = "Loop story",
         description = "Replay the current story when it ends",
     ) {
@@ -115,7 +114,7 @@ val loopStoryPatch =
 
         execute {
             val playerCast = StoryVideoPlayerCastFingerprint.matchOrNull()
-            val playerInit = if (playerCast == null) StoryVideoPlayerInitFingerprint.matchSingle() else null
+            val playerInit = if (playerCast == null) StoryVideoPlayerInitFingerprint else null
             val playerField = playerCast?.instructionMatches?.first()?.fieldReference
                 ?: playerInit!!.instructionMatches.single().fieldReference
             val playerTypes = playerCast?.let { listOf(it.instructionMatches.last().typeReference) }
@@ -128,7 +127,7 @@ val loopStoryPatch =
             if (playerTypes.isEmpty()) throw PatchException("No story video player implementations")
 
             (storyProgressCompletedFingerprint("mPhotoTimerController").matchOrNull()
-                ?: storyProgressCompletedFingerprint("photoTimerController").matchSingle()).let {
+                ?: storyProgressCompletedFingerprint("photoTimerController").match()).let {
                 val reelItemRegister = it.method.p0Register + 1
                 val reelItemType = REEL_ITEM
 
@@ -148,7 +147,7 @@ val loopStoryPatch =
                     ) throw PatchException("Current video story field is not public")
                     var seekGuard = ""
                     val absoluteSeek = legacySeek?.instructionMatches?.last()?.methodReference ?: run {
-                        val relativeSeek = storyRelativeDirectSeekFingerprint(playerType).matchSingle()
+                        val relativeSeek = storyRelativeDirectSeekFingerprint(playerType)
                         val seekHelper = relativeSeek.instructionMatches.last().methodReference
                         // Some players reject special story types before seeking.
                         val seekRestrictions = relativeSeek.originalMethod.implementation!!.instructions
@@ -172,8 +171,8 @@ val loopStoryPatch =
                             parameters = listOf("I"),
                             returnType = "V",
                             filters = listOf(methodCall(reference = seekHelper)),
-                        ).matchAll().singleOrNull { it.originalMethod.name != relativeSeek.originalMethod.name }
-                            ?.originalMethod ?: throw PatchException("Expected one absolute story seek method")
+                            custom = { method, _ -> method.name != relativeSeek.originalMethod.name }
+                        ).originalMethod
                     }
                     val seekOpcode = if (legacySeek != null) "invoke-static" else "invoke-virtual"
 
@@ -199,7 +198,7 @@ val loopStoryPatch =
                 val photoRestart = it.instructionMatches[0]
                 val photoRegister = photoRestart.getInstruction<TwoRegisterInstruction>().registerA
                 it.method.apply {
-                    if (p0Register <= 3 || p0Register > 15 || reelItemRegister != p0Register + 1 ||
+                    if (p0Register !in 4..15 || reelItemRegister != p0Register + 1 ||
                         reelItemRegister > 15 || photoRegister != 2 ||
                         it.instructionMatches[1].getInstruction<OneRegisterInstruction>().registerA != 1 ||
                         it.instructionMatches[2].instruction.registersUsed != listOf(0, 3)

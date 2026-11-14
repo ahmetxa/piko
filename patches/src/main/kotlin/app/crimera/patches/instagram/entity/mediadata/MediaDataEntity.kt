@@ -12,17 +12,14 @@ import app.crimera.patches.instagram.entity.originalSoundDataIntf.originalSoundD
 import app.crimera.patches.instagram.entity.trackDataIntf.trackDataIntfEntity
 import app.crimera.patches.instagram.entity.userdata.userDataEntity
 import app.crimera.patches.instagram.entity.videoData.videoDataEntity
-import app.crimera.patches.instagram.utils.fieldReference
-import app.crimera.patches.instagram.utils.methodReference
 import app.crimera.utils.changeFirstString
 import app.crimera.utils.changeString
 import app.crimera.utils.changeStringAt
 import app.crimera.utils.classNameToExtension
-import app.morphe.patcher.patch.bytecodePatch
-import app.morphe.patcher.util.matchSingle
+import app.morphe.patcher.patch.patch
 
 val mediaDataEntity =
-    bytecodePatch(
+    patch(
         description = "This patch is used for decoding obfuscated code of the media data",
     ) {
         dependsOn(decoderEntity, userDataEntity, videoDataEntity, originalSoundDataIntfEntity, trackDataIntfEntity)
@@ -45,6 +42,23 @@ val mediaDataEntity =
                 ImageInfoCandidatesMapperFingerprint.instructionMatches.first().methodReference.name,
             )
 
+            GetAdditionalImageCandidatesExtensionFingerprint.changeString(
+                "additionalMethod",
+                ImageInfoAdditionalCandidatesMapperFingerprint.instructionMatches[0].methodReference.name,
+            )
+            GetAdditionalImageCandidatesExtensionFingerprint.changeString(
+                "firstFrameMethod",
+                AdditionalImageCandidatesMapperFingerprint.instructionMatches[0].methodReference.name,
+            )
+            GetAdditionalImageCandidatesExtensionFingerprint.changeString(
+                "igtvFrameMethod",
+                AdditionalImageCandidatesMapperFingerprint.instructionMatches[2].methodReference.name,
+            )
+            GetAdditionalImageCandidatesExtensionFingerprint.changeString(
+                "smartFrameMethod",
+                AdditionalImageCandidatesMapperFingerprint.instructionMatches[4].methodReference.name,
+            )
+
             // Extracting the get mention set method used media helper class.
             GetMentionSetExtensionFingerprint.changeFirstString(ReelsMentionGetterFingerprint.originalMethod.name)
             GetMentionSetExtensionFingerprint.changeStringAt(
@@ -64,7 +78,7 @@ val mediaDataEntity =
 
             // Extracting method is video used in media class.
             IsVideoExtensionFingerprint.changeFirstString(
-                MediaIsVideoFingerprint.matchSingle().instructionMatches.first().methodReference.name,
+                MediaIsVideoFingerprint.instructionMatches.first().methodReference.name,
             )
 
             // Extraction of the media list.
@@ -88,19 +102,19 @@ val mediaDataEntity =
                 GetDescriptionTextExtensionFingerprint.changeFirstString(
                     mediaCommentGetterFingerprint(
                         it.originalClassDef.type,
-                        MediaCaptionGetterFingerprint.matchSingle().originalMethod,
-                    ).matchSingle().originalMethod.name,
+                        MediaCaptionGetterFingerprint.originalMethod,
+                    ).originalMethod.name,
                 )
             }
 
             // Both metadata interfaces expose MusicInfo without requiring a user session.
             listOf("clips", "music").forEach { kind ->
                 val key = "${kind}_metadata"
-                val metadataGetter = mediaMetadataGetterFingerprint(key).matchSingle().originalMethod
+                val metadataGetter = mediaMetadataGetterFingerprint(key).originalMethod
                 GetTrackDataIntfExtensionFingerprint.changeString("${kind}Metadata", metadataGetter.name)
                 GetTrackDataIntfExtensionFingerprint.changeString(
                     if (kind == "clips") "clipsMusicInfo" else "musicInfo",
-                    musicInfoGetterFingerprint(metadataGetter.returnType).matchSingle().originalMethod.name,
+                    musicInfoGetterFingerprint(metadataGetter.returnType).originalMethod.name,
                 )
             }
 
@@ -115,6 +129,7 @@ val mediaDataEntity =
 
             ExtMediaDictImageInfoMapperFingerprint.instructionMatches[1].fieldReference.let {
                 GetImageVariantsExtensionFingerprint.changeFirstString(it.name)
+                GetAdditionalImageCandidatesExtensionFingerprint.changeFirstString(it.name)
             }
 
             GetPostTypeKeyExtensionFingerprint.changeFirstString(

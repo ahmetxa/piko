@@ -16,7 +16,6 @@ import app.crimera.patches.instagram.utils.Constants.FOLLOW_LIST_DATA_CLASS
 import app.crimera.patches.instagram.utils.Constants.PATCHES_DESCRIPTOR
 import app.crimera.patches.instagram.utils.Constants.USER_SESSION_CLASS
 import app.crimera.patches.instagram.utils.enableSettings
-import app.crimera.patches.instagram.utils.fieldReference
 import app.crimera.utils.changeString
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.InstructionLocation.MatchAfterImmediately
@@ -25,10 +24,11 @@ import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
 import app.morphe.patcher.fieldAccess
 import app.morphe.patcher.methodCall
 import app.morphe.patcher.opcode
-import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.classDefBy
+import app.morphe.patcher.patch.patch
 import app.morphe.patcher.string
-import app.morphe.patcher.util.smali.ExternalLabel
 import app.morphe.patcher.util.addInstructionsAtControlFlowLabel
+import app.morphe.patcher.util.smali.ExternalLabel
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
 
@@ -57,6 +57,9 @@ internal object FollowListConfigConstructorFingerprint : Fingerprint(
     returnType = "V",
     name = "<init>",
     parameters = listOf("Landroid/os/Bundle;", USER_SESSION_CLASS, FOLLOW_LIST_DATA_CLASS),
+    filters = listOf(
+        fieldAccess(type = FOLLOW_LIST_DATA_CLASS, opcode = Opcode.IPUT_OBJECT)
+    )
 )
 
 /**
@@ -82,10 +85,10 @@ internal object OnRowBoundExtensionFingerprint : Fingerprint(
 
 @Suppress("unused")
 val friendshipStatusIndicatorPatch =
-    bytecodePatch(
+    patch(
         name = "Friendship status indicator",
         description =
-            "Adds a follows you back status label on the profile page and" +
+            "Adds a follows you back status label on the profile page and " +
                 "shows a detailed friendship status breakdown on click",
     ) {
 

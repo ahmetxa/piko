@@ -12,14 +12,16 @@ import app.crimera.patches.twitter.misc.shareMenu.browseObject.browseObjectPatch
 import app.crimera.patches.twitter.misc.shareMenu.hooks.shareMenuButtonInjection
 import app.crimera.patches.twitter.misc.shareMenu.hooks.shareMenuButtonOnClickHook
 import app.crimera.patches.twitter.utils.Constants.COMPATIBILITY_X
-import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.patch
 
 @Suppress("unused")
 val externalDownloaderPatch =
-    bytecodePatch(
+    patch(
         name = "Support external downloader",
+        default = false,
     ) {
         compatibleWith(COMPATIBILITY_X)
+        category("Legacy")
         dependsOn(settingsPatch, entityGenerator, shareMenuButtonOnClickHook, browseObjectPatch)
 
         execute {

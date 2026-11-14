@@ -9,8 +9,7 @@ package app.crimera.patches.instagram.misc.distractionFree.doubleTap
 import app.crimera.patches.instagram.utils.Constants.COMPATIBILITY_INSTAGRAM
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
-import app.morphe.patcher.patch.bytecodePatch
-import app.morphe.patcher.util.matchSingle
+import app.morphe.patcher.patch.patch
 
 internal object ReelOnDoubleTapFingerprint : Fingerprint(
     parameters = listOf("Landroid/view/MotionEvent;"),
@@ -21,14 +20,14 @@ internal object ReelOnDoubleTapFingerprint : Fingerprint(
 
 @Suppress("unused")
 val disableDoubleTapOnReelPatch =
-    bytecodePatch(
+    patch(
         description = "Disable double tap like on reels",
     ) {
         compatibleWith(COMPATIBILITY_INSTAGRAM)
 
         execute {
 
-            ReelOnDoubleTapFingerprint.matchSingle().method.addInstructions(
+            ReelOnDoubleTapFingerprint.method.addInstructions(
                 0,
                 DOUBLE_TAP_PREF_DESCRIPTOR.format("disableDoubleTapReel"),
             )

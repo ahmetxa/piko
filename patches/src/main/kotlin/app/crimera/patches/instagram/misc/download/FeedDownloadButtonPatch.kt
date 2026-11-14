@@ -19,7 +19,6 @@ import app.crimera.patches.instagram.misc.settings.settingsPatch
 import app.crimera.patches.instagram.utils.Constants.COMPATIBILITY_INSTAGRAM
 import app.crimera.patches.instagram.utils.Constants.DOWNLOAD_DESCRIPTOR
 import app.crimera.patches.instagram.utils.enableSettings
-import app.crimera.patches.instagram.utils.fieldReference
 import app.crimera.utils.changeString
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.InstructionLocation.MatchAfterImmediately
@@ -28,24 +27,22 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
 import app.morphe.patcher.fieldAccess
-import app.morphe.patcher.literal
 import app.morphe.patcher.methodCall
-import app.morphe.patcher.patch.BytecodePatchContext
 import app.morphe.patcher.patch.PatchException
-import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.patch
+import app.morphe.patcher.patch.classDefBy
+import app.morphe.patcher.patch.classDefByOrNull
+import app.morphe.patcher.resource.ResourceType
+import app.morphe.patcher.resourceLiteral
 import app.morphe.patcher.string
+import app.morphe.patcher.util.findFreeRegister
+import app.morphe.patcher.util.p0Register
 import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import app.morphe.patcher.util.smali.ExternalLabel
-import app.morphe.patcher.resource.ResourceType
 import app.morphe.patches.all.misc.resources.addAppResources
 import app.morphe.patches.all.misc.resources.addResourcesPatch
-import app.morphe.patcher.resource.resourceId
-import app.morphe.patcher.util.findFreeRegister
-import app.morphe.patcher.util.matchSingle
-import app.morphe.patcher.util.p0Register
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
-import com.android.tools.smali.dexlib2.iface.Method
 
 internal const val OBJECT_DESCRIPTOR = "Ljava/lang/Object;"
 internal const val INTEGER_DESCRIPTOR = "Ljava/lang/Integer;"
@@ -134,7 +131,7 @@ private object CurrentMediaIndexFingerprint : Fingerprint(
     name = "currentMediaIndex",
 )
 
-private fun feedRowHolderConstructorFingerprint(saveButtonId: Long) = Fingerprint(
+private object FeedRowHolderConstructorFingerprint : Fingerprint(
     name = "<init>",
     returnType = "V",
     parameters = listOf(VIEW_DESCRIPTOR),
@@ -147,13 +144,16 @@ private fun feedRowHolderConstructorFingerprint(saveButtonId: Long) = Fingerprin
             opcode = Opcode.IPUT_OBJECT,
             location = MatchAfterImmediately(),
         ),
-        literal(saveButtonId),
+        resourceLiteral(ResourceType.ID, "row_feed_button_save"),
     ),
 )
 
 private fun feedUfiBindFingerprint(holderType: String, stateType: String) = Fingerprint(
     returnType = "V",
     parameters = listOf("L", "L", stateType, holderType),
+    filters = listOf(
+        fieldAccess(definingClass = holderType, opcode = Opcode.IGET_OBJECT),
+    )
 )
 
 /** The UFI renderer selector, which returns the static `Integer` that follows the "view" string constant. */
@@ -167,7 +167,7 @@ private object FeedUfiRendererSelectorFingerprint : Fingerprint(
 )
 
 val feedDownloadButtonPatch =
-    bytecodePatch {
+    patch {
         compatibleWith(COMPATIBILITY_INSTAGRAM)
         dependsOn(
             sharedExtensionPatch,
@@ -191,14 +191,9 @@ val feedDownloadButtonPatch =
             // Only applied through "Download media", which enables the download section itself.
             enableSettings("feedDownloadButton")
 
-            val saveButtonId = resourceId(ResourceType.ID, "row_feed_button_save")
-            val stateType = hookFeedRowBinder(saveButtonId)
+            val stateType = hookFeedRowBinder()
             pinMainFeedToViewUfi()
-            injectLithoDownloadButton(
-                saveButtonId,
-                resourceId(ResourceType.DRAWABLE, "instagram_download_outline_24"),
-                stateType,
-            )
+            injectLithoDownloadButton(stateType)
         }
     }
 
@@ -208,12 +203,11 @@ val feedDownloadButtonPatch =
  *
  * @return the type of the row state the binder receives.
  */
-context(patchContext: BytecodePatchContext)
-private fun hookFeedRowBinder(saveButtonId: Long): String {
-    val holderMatch = feedRowHolderConstructorFingerprint(saveButtonId).matchSingle()
-    val holderClass = holderMatch.originalClassDef
+private fun hookFeedRowBinder(): String {
+    val holder = FeedRowHolderConstructorFingerprint
+    val holderClass = holder.originalClassDef
     val holderType = holderClass.type
-    val rootViewField = holderMatch.instructionMatches[1].fieldReference
+    val rootViewField = holder.instructionMatches[1].fieldReference
 
     val stateType =
         requireOne(
@@ -221,10 +215,10 @@ private fun hookFeedRowBinder(saveButtonId: Long): String {
             holderClass.fields
                 .map { it.type }
                 .filter { type ->
-                    patchContext.classDefByOrNull(type)?.fields?.count { it.type == MEDIA_DESCRIPTOR } == 1
+                    classDefByOrNull(type)?.fields?.count { it.type == MEDIA_DESCRIPTOR } == 1
                 }.distinct(),
         )
-    val stateClass = patchContext.classDefBy(stateType)
+    val stateClass = classDefBy(stateType)
     val mediaField = requireOne("Media field of $stateType", stateClass.fields.filter { it.type == MEDIA_DESCRIPTOR })
 
     // The state reaches the view state the carousel mutates. Its current-index field is the one
@@ -237,10 +231,10 @@ private fun hookFeedRowBinder(saveButtonId: Long): String {
     CurrentMediaIndexFingerprint.changeString("feedViewStateField", viewStateField.name)
     CurrentMediaIndexFingerprint.changeString("feedCurrentMediaField", CURRENT_MEDIA_FIELD.name)
 
-    val bind = feedUfiBindFingerprint(holderType, stateType).matchSingle().method
+    val bind = feedUfiBindFingerprint(holderType, stateType).method
     val sessionField = requireOne(
         "UserSession field of ${bind.definingClass}",
-        patchContext.classDefBy(bind.definingClass).fields.filter { it.type == USER_SESSION_DESCRIPTOR },
+        classDefBy(bind.definingClass).fields.filter { it.type == USER_SESSION_DESCRIPTOR },
     )
 
     val holderRegister = bind.parameterRegister(holderType)
@@ -269,7 +263,6 @@ private fun hookFeedRowBinder(saveButtonId: Long): String {
  * Only the view UFI renderer creates the holder [hookFeedRowBinder] hooks, so the main feed is
  * pinned to it; other modules keep the original selector result.
  */
-context(patchContext: BytecodePatchContext)
 private fun pinMainFeedToViewUfi() {
     FeedUfiRendererSelectorFingerprint.let {
         val viewVariantField = it.instructionMatches.last().fieldReference

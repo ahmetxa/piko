@@ -16,7 +16,7 @@ import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.extensions.InstructionExtensions.addInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
-import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.patch
 import app.morphe.patcher.string
 import com.android.tools.smali.dexlib2.Opcode
 
@@ -28,10 +28,12 @@ private object FeatureFlagFingerprint : Fingerprint(
 )
 
 val featureFlagPatch =
-    bytecodePatch(
+    patch(
         name = "Hook feature flag",
+        default = false,
     ) {
         compatibleWith(COMPATIBILITY_X)
+        category("Legacy")
         dependsOn(featureFlagResourcePatch, settingsPatch)
         execute {
 

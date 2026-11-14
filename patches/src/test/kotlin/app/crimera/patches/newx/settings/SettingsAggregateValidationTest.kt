@@ -45,8 +45,8 @@ class SettingsAggregateValidationTest {
     fun `only package changes are kept out of a mount install`() {
         // Added components are reached through the mount component proxy, so settings, the
         // downloader and branding stay selectable; only a package change cannot be mounted.
-        val standardOnly = setOf<Patch<*>>(clonePatch)
-        fun Patch<*>.requiresStandardInstall(visited: MutableSet<Patch<*>> = mutableSetOf()): Boolean =
+        val standardOnly = setOf<Patch>(clonePatch)
+        fun Patch.requiresStandardInstall(visited: MutableSet<Patch> = mutableSetOf()): Boolean =
             visited.add(this) && (this in standardOnly || dependencies.any { it.requiresStandardInstall(visited) })
 
         val patches = NewXContributionDiscovery.discoverSelectablePatches()

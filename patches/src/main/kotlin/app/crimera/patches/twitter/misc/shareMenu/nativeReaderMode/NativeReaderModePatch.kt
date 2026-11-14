@@ -12,15 +12,17 @@ import app.crimera.patches.twitter.misc.shareMenu.browseObject.browseObjectPatch
 import app.crimera.patches.twitter.misc.shareMenu.hooks.*
 import app.crimera.patches.twitter.utils.Constants.COMPATIBILITY_X
 import app.crimera.patches.twitter.utils.versionCheckPatch
-import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.patch
 
 @Suppress("unused")
 val nativeReaderModePatch =
-    bytecodePatch(
+    patch(
         name = "Native reader mode",
         description = "Requires X 11.0.0-release.0 or higher.",
+        default = false,
     ) {
         compatibleWith(COMPATIBILITY_X)
+        category("Legacy")
         dependsOn(
             nativeReaderModeResourcePatch,
             settingsPatch,

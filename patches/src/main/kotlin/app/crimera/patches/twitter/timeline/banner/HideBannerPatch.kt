@@ -14,7 +14,7 @@ import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.opcode
-import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.patch
 import com.android.tools.smali.dexlib2.Opcode
 
 private object HideBannerFingerprint : Fingerprint(
@@ -28,11 +28,13 @@ private object HideBannerFingerprint : Fingerprint(
 
 @Suppress("unused")
 val hideBannerPatch =
-    bytecodePatch(
+    patch(
         name = "Hide Banner",
         description = "Hide new post banner",
+        default = false,
     ) {
         compatibleWith(COMPATIBILITY_X)
+        category("Legacy")
         dependsOn(settingsPatch)
 
         execute {

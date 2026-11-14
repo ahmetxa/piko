@@ -10,14 +10,16 @@ import app.crimera.patches.twitter.misc.extension.twitterInitHook
 import app.crimera.patches.twitter.utils.Constants.COMPATIBILITY_X
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
-import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.patch
 
 @Suppress("unused")
 val crashLogsPatch =
-    bytecodePatch(
+    patch(
         description = "Adds recording crash logs functionality",
+        default = false,
     ) {
         compatibleWith(COMPATIBILITY_X)
+        category("Legacy")
 
         execute {
             twitterInitHook.fingerprint.method.apply {

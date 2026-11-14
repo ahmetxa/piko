@@ -15,12 +15,10 @@ import app.crimera.patches.instagram.misc.stories.handleStoryButtonPatch
 import app.crimera.patches.instagram.utils.Constants.COMPATIBILITY_INSTAGRAM
 import app.crimera.patches.instagram.utils.Constants.PATCHES_DESCRIPTOR
 import app.crimera.patches.instagram.utils.enableSettings
-import app.crimera.patches.instagram.utils.fieldReference
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.extensions.InstructionExtensions.addInstruction
 import app.morphe.patcher.fieldAccess
-import app.morphe.patcher.patch.bytecodePatch
-import app.morphe.patcher.util.matchSingle
+import app.morphe.patcher.patch.patch
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
@@ -49,7 +47,7 @@ private fun peopleCellSetterFingerprint(parameters: List<String>, field: FieldRe
 
 @Suppress("unused")
 val viewStoryMentionsPatch =
-    bytecodePatch(
+    patch(
         name = "View story mentions",
         description = "Add option to view visible and hidden story mentions.",
     ) {
@@ -58,7 +56,7 @@ val viewStoryMentionsPatch =
         compatibleWith(COMPATIBILITY_INSTAGRAM)
 
         execute {
-            val supportingField = SupportingTextViewFingerprint.matchSingle().instructionMatches.first().fieldReference
+            val supportingField = SupportingTextViewFingerprint.instructionMatches.first().fieldReference
 
             val setters = mapOf(
                 "setPrimaryText" to listOf("Ljava/lang/CharSequence;", "Z"),
@@ -69,7 +67,7 @@ val viewStoryMentionsPatch =
                 val target = peopleCellSetterFingerprint(
                     parameters,
                     supportingField.takeIf { name == "setSupportingText" },
-                ).matchSingle().originalMethod
+                ).originalMethod
 
                 Fingerprint(
                     definingClass = "$PATCHES_DESCRIPTOR/story/ViewStoryMentionsPatch;",
@@ -77,7 +75,7 @@ val viewStoryMentionsPatch =
                     parameters = listOf(PEOPLE_CELL_CLASS) + parameters,
                     returnType = "V",
                     accessFlags = listOf(AccessFlags.PRIVATE, AccessFlags.STATIC),
-                ).matchSingle().method.addInstruction(
+                ).method.addInstruction(
                     0,
                     "invoke-virtual/range {p0 .. p${parameters.size}}, $target",
                 )

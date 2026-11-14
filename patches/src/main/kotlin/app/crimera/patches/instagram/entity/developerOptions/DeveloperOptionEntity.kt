@@ -6,23 +6,21 @@
 
 package app.crimera.patches.instagram.entity.developerOptions
 
-import app.crimera.patches.instagram.utils.methodReference
 import app.crimera.utils.changeFirstString
 import app.crimera.utils.classNameToExtension
-import app.morphe.patcher.patch.bytecodePatch
-import app.morphe.patcher.util.matchSingle
+import app.morphe.patcher.patch.patch
 
 val developerOptionsEntity =
-    bytecodePatch(
+    patch(
         description = "This patch is used for decoding obfuscated code of developer options items",
     ) {
         execute {
             GetQuickExperimentHelperClassExtension.changeFirstString(
-                classNameToExtension(ExperimentsValueBuilderFingerprint.originalClassDef.type),
+                classNameToExtension(GetAllExperimentsFingerprint.originalClassDef.type),
             )
             GetAllExperimentsClassExtension.changeFirstString(GetAllExperimentsFingerprint.originalMethod.name)
 
-            ExperimentsGetMobileConfigSpecifier.matchSingle().let {
+            ExperimentsGetMobileConfigSpecifier.let {
                 GetExperimentItemHelperClassExtension.changeFirstString(classNameToExtension(it.originalClassDef.type))
                 GetUniversalIdHelperClassExtension.changeFirstString(
                     classNameToExtension(it.instructionMatches[1].methodReference.definingClass),

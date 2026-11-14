@@ -8,26 +8,23 @@ package app.crimera.patches.instagram.entity.reelResponseItem
 
 import app.crimera.patches.instagram.entity.decoder.USER_MODEL_CLASS_NAME
 import app.crimera.patches.instagram.entity.decoder.decoderEntity
-import app.crimera.patches.instagram.utils.methodReference
 import app.crimera.utils.changeFirstString
-import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.classDefBy
+import app.morphe.patcher.patch.patch
 
 val reelResponseItemEntity =
-    bytecodePatch(
+    patch(
         description = "This patch is used for decoding obfuscated code of ReelResponseItem class",
     ) {
         dependsOn(decoderEntity)
         execute {
+            val classFields = classDefBy("Lcom/instagram/model/reels/ReelResponseItem;").fields
 
-            ReelResponseItemFingerprint.apply {
-                val classFields = originalClassDef.fields
+            val reelTypeFieldName = classFields.first { it.type == ReelTypeEnumInitFingerprint.originalClassDef.type }.name
+            GetReelTypeExtensionFingerprint.changeFirstString(reelTypeFieldName)
 
-                val reelTypeFieldName = classFields.first { it.type == ReelTypeEnumInitFingerprint.originalClassDef.type }.name
-                GetReelTypeExtensionFingerprint.changeFirstString(reelTypeFieldName)
-
-                val userFieldName = classFields.first { it.type == USER_MODEL_CLASS_NAME }.name
-                GetUserDataExtensionFingerprint.changeFirstString(userFieldName)
-            }
+            val userFieldName = classFields.first { it.type == USER_MODEL_CLASS_NAME }.name
+            GetUserDataExtensionFingerprint.changeFirstString(userFieldName)
 
             GetMediaCountExtensionFingerprint.changeFirstString(
                 ReelResponseItemIntfMapperFingerprint.instructionMatches.last().methodReference.name,

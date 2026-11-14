@@ -14,11 +14,9 @@ import app.crimera.patches.instagram.utils.enableSettings
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.InstructionLocation.MatchAfterImmediately
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
-import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
 import app.morphe.patcher.methodCall
 import app.morphe.patcher.opcode
-import app.morphe.patcher.patch.bytecodePatch
-import app.morphe.patcher.util.matchSingle
+import app.morphe.patcher.patch.patch
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 
@@ -44,7 +42,7 @@ internal object FeedItemParseFromJsonFingerprint : Fingerprint(
 
 @Suppress("unused")
 val hideSuggestedContentPatch =
-    bytecodePatch(
+    patch(
         name = "Hide suggested content",
         description = "Hides suggested stories, reels, threads (Suggested posts will still be shown).",
         default = true,
@@ -53,10 +51,10 @@ val hideSuggestedContentPatch =
         dependsOn(settingsPatch)
         execute {
 
-            FeedItemParseFromJsonFingerprint.matchSingle().let { match ->
-                val keyIndex = match.instructionMatches[1].index
-                val keyRegister = match.instructionMatches[1].getInstruction<OneRegisterInstruction>().registerA
-                match.method.addInstructions(keyIndex + 1, Constants.JSONPARSER_CHECK_DESCRIPTOR.format(keyRegister, keyRegister))
+            FeedItemParseFromJsonFingerprint.let {
+                val keyIndex = it.instructionMatches[1].index
+                val keyRegister = it.instructionMatches[1].getInstruction<OneRegisterInstruction>().registerA
+                it.method.addInstructions(keyIndex + 1, Constants.JSONPARSER_CHECK_DESCRIPTOR.format(keyRegister, keyRegister))
             }
 
             enableSettings("hideSuggestedContent")

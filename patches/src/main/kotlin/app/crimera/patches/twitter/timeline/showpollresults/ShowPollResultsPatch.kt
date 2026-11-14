@@ -13,7 +13,7 @@ import app.crimera.patches.twitter.utils.enableSettings
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
-import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.patch
 import app.morphe.patcher.string
 import com.android.tools.smali.dexlib2.Opcode
 
@@ -28,11 +28,13 @@ private object JsonCardInstanceDataFingerprint : Fingerprint(
 
 @Suppress("unused")
 val showPollResultsPatch =
-    bytecodePatch(
+    patch(
         name = "Show poll results",
         description = "Adds an option to show poll results without voting",
+        default = false,
     ) {
         compatibleWith(COMPATIBILITY_X)
+        category("Legacy")
         dependsOn(settingsPatch)
 
         execute {

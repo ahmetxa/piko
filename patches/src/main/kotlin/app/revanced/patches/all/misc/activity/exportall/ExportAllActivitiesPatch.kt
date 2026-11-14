@@ -1,16 +1,18 @@
 package app.revanced.patches.all.misc.activity.exportall
 
 import app.crimera.patches.twitter.utils.Constants.COMPATIBILITY_X
-import app.morphe.patcher.patch.resourcePatch
+import app.morphe.patcher.patch.document
+import app.morphe.patcher.patch.patch
 
 @Suppress("unused")
 val exportAllActivitiesPatch =
-    resourcePatch(
+    patch(
         name = "Export all activities",
         description = "Makes all app activities exportable.",
         default = false,
     ) {
         compatibleWith(COMPATIBILITY_X)
+        category("Legacy")
 
         execute {
             val exportedFlag = "android:exported"

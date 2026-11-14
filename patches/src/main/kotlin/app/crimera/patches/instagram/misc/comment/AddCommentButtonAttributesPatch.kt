@@ -7,40 +7,34 @@
 package app.crimera.patches.instagram.misc.comment
 
 import app.crimera.patches.instagram.entity.decoder.COMMENT_BUTTON_CLASS
-import app.crimera.patches.instagram.utils.fieldReference
-import app.crimera.patches.instagram.utils.methodReference
 import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
 import app.morphe.patcher.methodCall
-import app.morphe.patcher.patch.BytecodePatchContext
+import app.morphe.patcher.util.registersUsed
 import app.morphe.patcher.util.smali.ExternalLabel
 import app.morphe.util.indexOfFirstInstructionReversedOrThrow
-import app.morphe.patcher.util.matchSingle
-import app.morphe.patcher.util.registersUsed
 import com.android.tools.smali.dexlib2.iface.instruction.WideLiteralInstruction
 
 /**
  * String and drawable resources of a native chat button, from its constructor.
  */
-context(_: BytecodePatchContext)
-internal fun nativeChatButtonResources(constructor: Fingerprint): Pair<Long, Long> =
-    constructor.matchSingle().let {
-        val drawable = it.instructionMatches[1].getInstruction<WideLiteralInstruction>().wideLiteral
-        val string = it.instructionMatches[2].getInstruction<WideLiteralInstruction>().wideLiteral
-        string to drawable
-    }
+internal fun nativeChatButtonResources(constructor: Fingerprint): Pair<Long, Long> {
+    val drawable = constructor.instructionMatches[1].getInstruction<WideLiteralInstruction>().wideLiteral
+    val string = constructor.instructionMatches[2].getInstruction<WideLiteralInstruction>().wideLiteral
+    return string to drawable
+}
 
-context(patchContext: BytecodePatchContext)
 fun addButtonAttribute(
     stringLateral: Long,
     drawableLateral: Long,
     button2CheckFingerprint: Fingerprint,
     buttonInstanceFingerprint: Fingerprint,
-) {
+    stringIdMethod: String? = null,
+): String {
     // Previously added buttons changed the method.
     CommentActionButtonFingerprint.clearMatch()
-    CommentActionButtonFingerprint.method.apply {
+    return CommentActionButtonFingerprint.method.run {
         val matches = CommentActionButtonFingerprint.instructionMatches
         val existingButtonIndex = matches[0].index
         val existingButtonClass = matches[0].fieldReference.definingClass
@@ -49,6 +43,10 @@ fun addButtonAttribute(
         val isEqualsClass = matches[1].methodReference.definingClass
         val compareButtonRegister = isEqualsInstruction.registersUsed[0]
         val ourButtonRegister = isEqualsInstruction.registersUsed[1]
+        // Added Piko strings receive their resource IDs when the APK resources are rebuilt.
+        val loadStringId = stringIdMethod?.let {
+            "invoke-static {}, $it\nmove-result v$ourButtonRegister"
+        } ?: "const v$ourButtonRegister, $stringLateral"
 
         val buttonStyleClass = matches[5].fieldReference.definingClass
 
@@ -88,7 +86,7 @@ fun addButtonAttribute(
             move-result v$ourButtonRegister
             
             if-eqz v$ourButtonRegister, :next_button
-            const v$ourButtonRegister, $stringLateral
+            $loadStringId
             new-instance v$stringInitRegister, $stringInitClass
             invoke-direct {v$stringInitRegister, v$ourButtonRegister}, $stringInitClass-><init>(I)V
             
@@ -110,10 +108,10 @@ fun addButtonAttribute(
 
         // Dynamically inject super class to  our extension class
         buttonInstanceFingerprint.classDef.setSuperClass(bundleClass)
+        stringInitClass.toString()
     }
 }
 
-context(patchContext: BytecodePatchContext)
 fun addButtonInterface(buttonInstanceFingerprint: Fingerprint) {
     // Dynamically inject interface to our extension class.
     buttonInstanceFingerprint.classDef.interfaces.add(COMMENT_BUTTON_CLASS)

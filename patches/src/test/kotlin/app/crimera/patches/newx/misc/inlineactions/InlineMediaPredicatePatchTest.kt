@@ -475,7 +475,6 @@ class InlineMediaPredicatePatchTest {
             }
             addLabel("resume")
             if (shape.hoistedNull) {
-                // 12.41 hoists the null literal far above the guard; the null arm only moves it.
                 addInstruction("const/4 v$hoistedZero, 0x0".toInstruction())
                 if (shape.nullSourceOverwrite) {
                     addInstruction(BuilderInstruction21t(Opcode.IF_EQZ, parameter, getLabel("nullSourceKept")))
@@ -541,7 +540,6 @@ class InlineMediaPredicatePatchTest {
             )
             addLabel("metadataMerge")
             if (shape.mergePrelude) {
-                // 12.41 reads a handler field between the merge label and the metadata call.
                 val preludeRegister = if (shape.preludeWritesPost) post else scratch
                 addInstruction(
                     "iget-object v$preludeRegister, v0, $VIDEO_TAB_HANDLER->inlinePost:$VIDEO_TAB_TIMELINE_POST"

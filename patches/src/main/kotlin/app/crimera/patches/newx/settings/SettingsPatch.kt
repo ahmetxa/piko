@@ -36,7 +36,6 @@ internal val newXSettingsPatch =
             newXExtensionPatch,
             newXSettingsResourcePatch,
             addResourcesPatch,
-            // Opens the settings activity and folder picker on root mounts.
             newXMountComponentProxyPatch,
         )
 

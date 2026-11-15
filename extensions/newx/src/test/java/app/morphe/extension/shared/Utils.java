@@ -2,15 +2,6 @@ package app.morphe.extension.shared;
 
 import android.content.Context;
 
-/**
- * Test-source stand-in for {@code app.morphe.extension.shared.Utils} from the {@code compileOnly}
- * morphe-extensions-library artifact, which is absent from the unit-test runtime classpath.
- *
- * <p>Only the static context is modelled. Until a test calls {@link #setContext} the class behaves
- * like the missing library did ({@link #getContext} and every other helper throw), so tests that
- * never set a context keep exercising the same "shared helper unavailable" fallbacks. Tests must
- * call {@link #reset()} when done so the state does not leak into other tests in the same JVM.
- */
 public final class Utils {
     private static volatile boolean contextSet;
     private static volatile Context context;
@@ -28,7 +19,6 @@ public final class Utils {
         contextSet = true;
     }
 
-    /** Test-only: returns the stub to its initial "library unavailable" state. */
     public static void reset() {
         context = null;
         contextSet = false;

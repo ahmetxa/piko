@@ -164,7 +164,6 @@ class NewXResolverLinterTest {
 
         assertTrue(isLaunchRevealRenderer(renderer))
         assertTrue(hasObjectAndIntParameterShape(listOf(view, "I", "Lfixture/PerformanceCallback;"), view))
-        // Exactly one Int is required, so a second Int in either the third or fourth slot is rejected.
         assertFalse(hasObjectAndIntParameterShape(listOf(view, "I", "I")))
         assertFalse(hasObjectAndIntParameterShape(listOf(view, "I", "Lfixture/PerformanceCallback;", "I")))
         assertFalse(hasObjectAndIntParameterShape(listOf("Lfixture/Other;", "I", "Lfixture/PerformanceCallback;"), view))
@@ -1421,7 +1420,6 @@ class NewXResolverLinterTest {
             "Lfixture/ui/ComposeHost;",
             "changedName",
             (if (changedLast) {
-                // 12.41.0 host: `$changed` moved to the end of the Compose parameter list.
                 listOf(
                     "Lkotlin/jvm/functions/Function0;",
                     "Z",

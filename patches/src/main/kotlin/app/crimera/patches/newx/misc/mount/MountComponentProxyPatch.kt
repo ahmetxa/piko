@@ -27,16 +27,6 @@ import com.android.tools.smali.dexlib2.immutable.ImmutableMethodParameter
 import com.android.tools.smali.dexlib2.immutable.reference.ImmutableMethodReference
 import org.w3c.dom.Element
 
-/*
- * Root mount support for extension-owned components.
- *
- * A mount keeps the stock manifest registered with the package manager, so the activities and
- * receivers the patches add to the manifest do not exist for the system. The extension class
- * `MountComponentProxy` routes launches of those components through a registered stock component
- * and this patch makes the app's AppComponentFactory instantiate the real extension class in its
- * place. Standard installs are unaffected: their components are registered and never rerouted.
- */
-
 private const val MOUNT_PROXY_DESCRIPTOR = "$EXTENSION_PACKAGE/mount/MountComponentProxy;"
 private const val EXTENSION_ROOT = "Lapp/morphe/extension/"
 
@@ -47,20 +37,13 @@ private const val CLASS_LOADER_DESCRIPTOR = "Ljava/lang/ClassLoader;"
 private val routeMethod =
     methodReference("$MOUNT_PROXY_DESCRIPTOR->route(${INTENT_DESCRIPTOR}Landroid/content/Context;)V")
 
-/** The framework base class every `android:appComponentFactory` must extend. */
 internal const val FRAMEWORK_FACTORY_DESCRIPTOR = "Landroid/app/AppComponentFactory;"
 
-/**
- * An `AppComponentFactory` callback the hook rewrites and its `MountComponentProxy` resolver,
- * `(String className, Intent) -> String`. The resolver encodes the component kind in its name so the
- * hook needs no scratch register: compiled factory overrides can have no free locals.
- */
 internal data class FactoryCallback(
     val name: String,
     val returnType: String,
     val resolverName: String,
 ) {
-    /** `(ClassLoader, String className, Intent)`: p1, p2, p3 of the instance method. */
     val parameters = listOf(CLASS_LOADER_DESCRIPTOR, STRING_DESCRIPTOR, INTENT_DESCRIPTOR)
 
     val resolver: MethodReference =
@@ -73,17 +56,11 @@ internal val factoryCallbacks =
         FactoryCallback("instantiateReceiver", "Landroid/content/BroadcastReceiver;", "resolveReceiverClassName"),
     )
 
-/**
- * Contract: inserts at index 0 of an existing callback implementation
- * `invoke-static {p2, p3}, callback.resolver; move-result-object p2` (className = p2, intent = p3).
- * Uses no scratch register.
- */
 internal fun MutableMethod.insertResolveClassNameHook(callback: FactoryCallback) {
     val classNameRegister = p0Register + 2
     val intentRegister = p0Register + 3
     insertHook(
         index = 0,
-        // A branch back to the entry would only repeat the idempotent class name rewrite.
         relocateBranchTargets = false,
     ) {
         invokeStatic(callback.resolver, classNameRegister, intentRegister)
@@ -91,12 +68,6 @@ internal fun MutableMethod.insertResolveClassNameHook(callback: FactoryCallback)
     }
 }
 
-/**
- * Contract: adds `public <callback>(ClassLoader, String, Intent)<Ret>` to [this] factory class, which
- * declares no such method. Body: the resolve hook, then
- * `invoke-super {p0, p1, p2, p3}, <superclass>-><callback>(...)`, `move-result-object`, `return-object`.
- * [superclass] is this class's direct superclass. Returns the added method.
- */
 internal fun MutableClass.addFactoryCallbackOverride(
     callback: FactoryCallback,
     superclass: String,
@@ -105,8 +76,6 @@ internal fun MutableClass.addFactoryCallbackOverride(
         throw PatchException("$type already declares ${callback.name}; it cannot be added again")
     }
 
-    // No locals: p0..p3 = this, ClassLoader, String, Intent.
-    // The four argument registers are the whole invoke-super operand list.
     val placeholder =
         MethodImplementationBuilder(4).apply {
             addInstruction("return-void".toInstruction())
@@ -134,17 +103,14 @@ internal fun MutableClass.addFactoryCallbackOverride(
         ImmutableMethodReference(superclass, callback.name, callback.parameters, callback.returnType)
     method.insertHook(
         index = 0,
-        // The placeholder return-void carries no labels, so there are no branch targets to relocate.
         relocateBranchTargets = false,
     ) {
         invokeStatic(callback.resolver, p0 + 2, p0 + 3)
         moveResult(p0 + 2, STRING_DESCRIPTOR)
         invokeSuper(superMethod, p0, p0 + 1, p0 + 2, p0 + 3)
-        // p1 (the ClassLoader) is dead after the super call, so it holds the result: no scratch register.
         moveResult(p0 + 1, callback.returnType)
         returnObject(p0 + 1)
     }
-    // The hook ends with return-object, so the placeholder is now the unreachable last instruction.
     val lastIndex = implementation.instructions.lastIndex
     if (implementation.instructions.last().opcode != Opcode.RETURN_VOID) {
         throw PatchException("Mount proxy override ${callback.name} lost its placeholder return-void")
@@ -153,7 +119,6 @@ internal fun MutableClass.addFactoryCallbackOverride(
     return method
 }
 
-/** The manifest's `android:appComponentFactory`, as a type descriptor, or null when it has none. */
 private var appComponentFactoryDescriptor: String? = null
 
 private val mountComponentProxyResourcePatch =
@@ -189,10 +154,6 @@ internal val newXMountComponentProxyPatch =
         }
     }
 
-/**
- * Rewrites the class name at the start of the factory callbacks. The factory is the only process
- * side entry point that sees both the component class name and the launching intent.
- */
 context(context: BytecodePatchContext)
 private fun hookAppComponentFactory() {
     val factory =
@@ -208,10 +169,6 @@ private fun hookAppComponentFactory() {
     factoryCallbacks.forEach { callback -> hookFactoryCallback(factory, callback) }
 }
 
-/**
- * Hooks the most derived implementation of [callback] in the factory's dex chain, or adds an
- * override to the factory itself when the chain reaches the framework factory without one.
- */
 context(context: BytecodePatchContext)
 private fun hookFactoryCallback(
     factory: String,
@@ -277,10 +234,6 @@ private data class IntentConstruction(
     val contextRegister: Int,
 )
 
-/**
- * Calls the router after every `new Intent(Context, Class)` in extension code, the only shape the
- * extensions use to address their own components. The router leaves registered components alone.
- */
 context(context: BytecodePatchContext)
 private fun routeExtensionIntents() {
     val owners = mutableListOf<String>()
@@ -301,12 +254,9 @@ private fun routeExtensionIntents() {
     owners.forEach { owner ->
         context.mutableClassDefBy(owner).methods.forEach { method ->
             val constructions = method.intentConstructions()
-            // Insert from the end so earlier indices stay valid.
             constructions.sortedByDescending(IntentConstruction::index).forEach { construction ->
                 method.insertHook(
                     index = construction.index + 1,
-                    // A jump to the next instruction skips the reroute; the intent then keeps its
-                    // original component, which is the standard install behaviour.
                     relocateBranchTargets = false,
                 ) {
                     invokeStatic(routeMethod, construction.intentRegister, construction.contextRegister)

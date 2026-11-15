@@ -1,11 +1,5 @@
 package app.crimera.patches.newx.misc.mount
 
-// Guards the 12.40.1-prod.01 root-mount regression: the manifest's CoreComponentFactory keeps only
-// <init> in dex (R8 removed its overrides), so the old hook found no callback to patch and silently
-// skipped, and Piko settings opened the stock proxy activity (PerfDiagnosticsActivity) instead.
-// These tests prove a missing callback is added with the resolve hook ahead of the super call, and
-// that an existing callback receives the same hook in front of its original body.
-
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.removeInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
@@ -111,7 +105,6 @@ class MountComponentProxyPatchTest {
                 "${callback.name}: hook must be a 2-instruction prefix before the original body",
             )
 
-            // 6 registers: p0 = v2.
             val p0 = registersBefore - 4
             assertResolveHook(callback, instructions[0], instructions[1], p0)
             assertEquals(
@@ -124,10 +117,6 @@ class MountComponentProxyPatchTest {
         }
     }
 
-    // Guards the 12.40.1 root-mount abort: hooking a compiled androidx CoreComponentFactory override
-    // that declares no locals (.registers 4, p0..p3 only) must not abort the mount patch, because
-    // a PatchException there takes every dependent patch (Settings, Crash logs, Inline download)
-    // down with it. The hook needs no scratch register, so the frame must stay exactly as it was.
     @Test
     fun `a callback with no locals is hooked without aborting the patch`() {
         factoryCallbacks.forEach { callback ->
@@ -159,7 +148,6 @@ class MountComponentProxyPatchTest {
 
             assertResolveHook(callback, instructions[0], instructions[1])
 
-            // The original tail is intact with the same registers.
             assertEquals(listOf(0, 1, 2, 3), instructions[2].registers())
             assertEquals(1, (instructions[3] as OneRegisterInstruction).registerA)
             assertEquals(listOf(1), instructions[4].registers())
@@ -169,7 +157,6 @@ class MountComponentProxyPatchTest {
         }
     }
 
-    /** `invoke-static {p2, p3}, callback.resolver` then `move-result-object p2` (p0 = [p0]). */
     private fun assertResolveHook(
         callback: FactoryCallback,
         invoke: Instruction,
@@ -224,7 +211,6 @@ class MountComponentProxyPatchTest {
         )
     }
 
-    /** `<callback>(ClassLoader, String, Intent)` with 2 locals, body: `super.<callback>(...)` then return it. */
     private fun existingOverride(callback: FactoryCallback): MutableMethod {
         val implementation = MethodImplementationBuilder(6)
         implementation.addInstruction("return-void".toInstruction())
@@ -249,16 +235,10 @@ class MountComponentProxyPatchTest {
                 return-object v0
             """.trimIndent(),
         )
-        // Drop the placeholder return-void left behind the inserted body.
         method.removeInstruction(3)
         return method
     }
 
-    /**
-     * The shape androidx ships in `CoreComponentFactory`: `.registers 4` (ZERO locals; v0..v3 are
-     * p0..p3) and the result of `super` is rewritten in place through p1:
-     * `super` -> `move-result-object p1` -> `checkCompatWrapper(p1)` -> `check-cast` -> `return-object p1`.
-     */
     private fun zeroLocalsOverride(callback: FactoryCallback): MutableMethod {
         val implementation = MethodImplementationBuilder(4)
         implementation.addInstruction("return-void".toInstruction())
@@ -286,7 +266,6 @@ class MountComponentProxyPatchTest {
                 return-object p1
             """.trimIndent(),
         )
-        // Drop the placeholder return-void left behind the inserted body.
         method.removeInstruction(6)
         return method
     }

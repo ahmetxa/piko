@@ -122,7 +122,6 @@ val newXInlineDownloadButtonPatch =
             newXThumbnailCachePatch,
             newXInAppNotificationPatch,
             downloaderManifestPatch,
-            // Opens the folder picker and serves download notification actions on root mounts.
             newXMountComponentProxyPatch,
             newXExtensionPatch,
         )

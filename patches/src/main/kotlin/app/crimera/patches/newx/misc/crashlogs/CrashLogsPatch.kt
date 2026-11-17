@@ -3,6 +3,7 @@ package app.crimera.patches.newx.misc.crashlogs
 import app.crimera.patches.newx.utils.unsupportedOnMount
 import app.crimera.patches.newx.misc.extension.newXExtensionPatch
 import app.crimera.patches.newx.misc.extension.newXInitHook
+import app.crimera.patches.newx.misc.mount.newXMountComponentProxyPatch
 import app.crimera.patches.newx.misc.postoptions.newXPostOption
 import app.crimera.patches.newx.settings.Categories
 import app.crimera.patches.newx.settings.Groups
@@ -57,7 +58,7 @@ val newXCrashLogsPatch =
         unsupportedOnMount()
         compatibleWith(COMPATIBILITY_NEW_X)
         category("NewX patches")
-        dependsOn(newXExtensionPatch, newXCrashLogsResourcePatch)
+        dependsOn(newXExtensionPatch, newXCrashLogsResourcePatch, newXMountComponentProxyPatch)
 
         newXSettings {
             category(Categories.ADVANCED) {

@@ -35,10 +35,9 @@ val showSourceLabel =
     patch(
         name = "Show post source label",
         description = "Source label will be shown only on public posts",
-        default = false,
     ) {
         compatibleWith(COMPATIBILITY_X)
-        category("Legacy")
+        category("Old patches")
         dependsOn(settingsPatch)
 
         execute {

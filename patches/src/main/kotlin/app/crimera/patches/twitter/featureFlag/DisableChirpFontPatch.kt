@@ -17,10 +17,9 @@ import app.morphe.patcher.patch.patch
 val disableChirpFontPatch =
     patch(
         name = "Disable chirp font",
-        default = false,
     ) {
         compatibleWith(COMPATIBILITY_X)
-        category("Legacy")
+        category("Old patches")
         dependsOn(featureFlagPatch, settingsPatch)
         execute {
 

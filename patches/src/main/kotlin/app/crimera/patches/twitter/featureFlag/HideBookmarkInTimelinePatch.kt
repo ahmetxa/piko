@@ -17,10 +17,9 @@ import app.morphe.patcher.patch.patch
 val hideBookmarkInTimelinePatch =
     patch(
         name = "Hide bookmark icon in timeline",
-        default = false,
     ) {
         compatibleWith(COMPATIBILITY_X)
-        category("Legacy")
+        category("Old patches")
         dependsOn(featureFlagPatch, settingsPatch)
         execute {
 

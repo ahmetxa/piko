@@ -17,10 +17,10 @@ val restoreLegacyFollowerListsPatch =
     patch(
         name = "Restore legacy follower lists",
         description = "Restores the legacy follower and following list screen.",
-        default = false,
+        default = true,
     ) {
         compatibleWith(COMPATIBILITY_X)
-        category("Legacy")
+        category("Old patches")
         dependsOn(featureFlagPatch, settingsPatch)
         execute {
             flagSettings("restoreLegacyFollowerLists")

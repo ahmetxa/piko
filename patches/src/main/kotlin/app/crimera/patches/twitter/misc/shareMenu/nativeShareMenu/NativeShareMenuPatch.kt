@@ -19,10 +19,10 @@ val nativeShareMenuPatch =
     patch(
         name = "Custom share menu",
         description = "Overrides existing share menu and adds a new one",
-        default = false,
+        default = true,
     ) {
         compatibleWith(COMPATIBILITY_X)
-        category("Legacy")
+        category("Old patches")
         dependsOn(settingsPatch, nativeShareMenuResourcePatch, entityGenerator, shareMenuButtonOnClickHook, browseObjectPatch)
 
         execute {

@@ -18,10 +18,9 @@ import app.morphe.patcher.patch.patch
 val externalDownloaderPatch =
     patch(
         name = "Support external downloader",
-        default = false,
     ) {
         compatibleWith(COMPATIBILITY_X)
-        category("Legacy")
+        category("Old patches")
         dependsOn(settingsPatch, entityGenerator, shareMenuButtonOnClickHook, browseObjectPatch)
 
         execute {

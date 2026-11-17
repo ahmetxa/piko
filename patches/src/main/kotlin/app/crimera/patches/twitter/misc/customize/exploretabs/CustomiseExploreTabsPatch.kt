@@ -29,10 +29,9 @@ private object CustomiseExploreTabsFingerprint : Fingerprint(
 val customiseExploreTabsPatch =
     patch(
         name = "Customize explore tabs",
-        default = false,
     ) {
         compatibleWith(COMPATIBILITY_X)
-        category("Legacy")
+        category("Old patches")
         dependsOn(settingsPatch)
 
         execute {

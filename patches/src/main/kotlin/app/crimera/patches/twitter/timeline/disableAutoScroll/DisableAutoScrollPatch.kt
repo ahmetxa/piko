@@ -83,10 +83,9 @@ private object HomeTimelineRenderFingerprint : Fingerprint(
 val disableAutoScrollPatch =
     patch(
         name = "Disable auto timeline scroll on launch",
-        default = false,
     ) {
         compatibleWith(COMPATIBILITY_X)
-        category("Legacy")
+        category("Old patches")
         dependsOn(settingsPatch)
 
         execute {

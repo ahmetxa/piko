@@ -26,10 +26,9 @@ private object CustomiseTypeAheadResponseFingerprint : Fingerprint(
 val customiseTypeAheadResponsePatch =
     patch(
         name = "Customize search suggestions",
-        default = false,
     ) {
         compatibleWith(COMPATIBILITY_X)
-        category("Legacy")
+        category("Old patches")
         dependsOn(settingsPatch)
 
         execute {

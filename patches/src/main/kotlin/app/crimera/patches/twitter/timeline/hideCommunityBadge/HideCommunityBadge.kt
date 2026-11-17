@@ -31,10 +31,9 @@ private object CommModelFingerprint : Fingerprint(
 val hideCommunityBadge =
     patch(
         name = "Hide community badges",
-        default = false,
     ) {
         compatibleWith(COMPATIBILITY_X)
-        category("Legacy")
+        category("Old patches")
         dependsOn(settingsPatch)
 
         execute {
